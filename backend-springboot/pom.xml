@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Spring Boot 3.5.x is the line that camunda-spring-boot-3-starter 8.10 is built for -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>in.srmist</groupId>
+    <artifactId>revaluation-backend</artifactId>
+    <version>1.0.0</version>
+    <name>revaluation-backend</name>
+    <description>Examination Revaluation Request - Spring Boot backend for Camunda 8.10</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- Camunda Java client / Spring starter. 8.10.x clients work with any 8.10.x engine
+             (c8run 8.10.6 locally, camunda/camunda:8.10.9 in Docker). Checked on Maven Central. -->
+        <camunda.version>8.10.9</camunda.version>
+    </properties>
+
+    <dependencies>
+        <!-- REST controllers for the React portal -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- JPA repositories (H2 locally, PostgreSQL in Docker) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <!-- jakarta.validation annotations on request DTOs -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- /actuator/health, used by the Docker healthcheck -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- JavaMailSender: emails the examiner's portal login (Mailpit locally) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <!-- BCrypt password hashing for staff accounts (only the crypto module, not the full Spring Security filter chain) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Camunda 8 client: @JobWorker, @Deployment, CamundaClient -->
+        <dependency>
+            <groupId>io.camunda</groupId>
+            <artifactId>camunda-spring-boot-3-starter</artifactId>
+            <version>${camunda.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- The BPMN, DMN and form files live in ../bpmn-models (the mandated repo layout).
+                 They are copied into the jar under /models so @Deployment can deploy them on startup. -->
+            <resource>
+                <directory>../bpmn-models</directory>
+                <targetPath>models</targetPath>
+                <includes>
+                    <include>*.bpmn</include>
+                    <include>*.dmn</include>
+                    <include>forms/*.form</include>
+                </includes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

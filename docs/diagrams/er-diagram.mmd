@@ -1,0 +1,49 @@
+erDiagram
+  REVALUATION_APPLICATION ||--|{ COURSE_REQUEST : "has 1..6"
+  EXAMINER ||--o{ COURSE_REQUEST : "examinerId (assigned)"
+  REVALUATION_APPLICATION ||--o{ PROCESS_EVENT : "applicationId (log)"
+  REVALUATION_APPLICATION {
+    Long id PK
+    String applicationId UK "APP-yyMMddHHmmssSSS"
+    String registerNo
+    String studentName
+    String studentEmail
+    Long processInstanceKey "Camunda instance"
+    String status "SUBMITTED, IN_PROGRESS, COMPLETED, FAILED_TO_START"
+    BigDecimal totalRefund
+    Instant createdAt
+    Instant updatedAt
+  }
+  COURSE_REQUEST {
+    Long id PK
+    Long application_id FK
+    String courseCode
+    String requestId "message correlation key"
+    String status
+    Integer originalMarks
+    Integer finalMarks
+    String grade
+    BigDecimal refundAmount
+    String examinerId
+    String examinerName
+    String reason
+    String letterUrl
+  }
+  EXAMINER {
+    Long id PK
+    String examinerId UK
+    String name
+    String email
+    String department
+    String courses "comma separated"
+    int activeAssignments
+    boolean available
+  }
+  PROCESS_EVENT {
+    Long id PK
+    String applicationId
+    String requestId
+    String eventType
+    String message
+    Instant timestamp
+  }

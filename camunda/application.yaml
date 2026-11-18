@@ -1,0 +1,41 @@
+# Camunda 8.10 Orchestration Cluster (Zeebe engine + Operate + Tasklist) for docker-compose.yml.
+# Based on the official lightweight Docker Compose distribution (H2 secondary storage).
+# LOCAL DEVELOPMENT ONLY: the API is unprotected and the web login is demo / demo.
+camunda:
+  backup:
+    webapps:
+      enabled: false
+  system:
+    cpu-thread-count: "3"
+    io-thread-count: "3"
+  security:
+    authentication:
+      method: "basic"
+      # Lets the Spring Boot backend and the connector runtime connect without credentials
+      unprotectedApi: true
+    authorizations:
+      enabled: false
+    initialization:
+      users:
+        - username: "demo"
+          password: "demo"
+          name: "Demo User"
+          email: "demo@demo.com"
+      defaultRoles.admin.users:
+        - "demo"
+  # Where the engine looks up camunda.secrets.<NAME>: one file per secret in this folder,
+  # written from .env by the camunda-data-init container (same file store c8run uses locally).
+  secrets:
+    stores:
+      file:
+        default:
+          path: /usr/local/camunda/secrets
+  data:
+    secondary-storage:
+      type: rdbms
+      rdbms:
+        url: jdbc:h2:file:./camunda-data/h2db
+        username: sa
+        password:
+        flushInterval: PT0.5S
+        queueSize: 1000

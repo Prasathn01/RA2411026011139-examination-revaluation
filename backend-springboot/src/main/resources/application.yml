@@ -1,0 +1,64 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: revaluation-backend
+  datasource:
+    # Local run: H2 file database in backend-springboot/data/.
+    # Docker: DB_URL / DB_USERNAME / DB_PASSWORD point at the PostgreSQL container.
+    url: ${DB_URL:jdbc:h2:file:./data/revaldb}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  h2:
+    console:
+      enabled: ${H2_CONSOLE_ENABLED:true}
+  # SMTP server for the examiner login emails (Mailpit catches them; web inbox on :8025)
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+
+camunda:
+  client:
+    mode: self-managed
+    # Camunda 8 Run 8.10 and the Docker setup in this repo run with an unprotected API
+    # (local development only), so the client needs no credentials.
+    auth:
+      method: none
+    grpc-address: ${CAMUNDA_GRPC_ADDRESS:http://localhost:26500}
+    rest-address: ${CAMUNDA_REST_ADDRESS:http://localhost:8080}
+
+revaluation:
+  # Mock external systems (results system, Razorpay-shaped payment API, document store)
+  mock-services-url: ${MOCK_SERVICES_URL:http://localhost:3000}
+  # Used by the payment bridge and the "Pay fee (demo)" helper. Same values as the connector secrets.
+  payment-api-url: ${PAYMENT_API_URL:http://localhost:3000/razorpay/v1}
+  razorpay-key-id: ${RAZORPAY_KEY_ID:rzp_test_mock}
+  razorpay-key-secret: ${RAZORPAY_KEY_SECRET:mock_secret}
+  # Recipients of the sequential "Notify stakeholders" step (besides the student)
+  hod-email: ${HOD_EMAIL:hod.cse@srmist.test}
+  coe-email: ${COE_EMAIL:coe@srmist.test}
+  # Staff portal: the CoE account is created on first start with this password (demo value; change it with COE_PASSWORD)
+  coe-password: ${COE_PASSWORD:coe-demo-2026}
+  # Sender of the examiner login emails
+  mail-from: ${MAIL_FROM:coe@srmist.test}
+  # The React dev server origin allowed by CORS (in Docker, nginx proxies /api so CORS is not used)
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  health:
+    # Do not report the whole backend as DOWN just because the mail server is unreachable
+    mail:
+      enabled: false
+
+logging:
+  level:
+    in.srmist.revaluation: INFO

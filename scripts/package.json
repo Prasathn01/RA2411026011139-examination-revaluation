@@ -1,0 +1,8 @@
+{
+  "name": "revaluation-feel-check",
+  "private": true,
+  "type": "module",
+  "description": "Evaluates the FEEL expressions of the BPMN models with sample inputs (see README, FEEL dictionary)",
+  "scripts": { "feel": "node feel-check.mjs" },
+  "dependencies": { "feelin": "8.2.0" }
+}

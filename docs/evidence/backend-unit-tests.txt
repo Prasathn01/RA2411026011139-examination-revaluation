@@ -1,0 +1,17 @@
+mvn -B test  —  run on 2026-11-18 08:29 IST
+-------------------------------------------------------------------------------
+Test set: in.srmist.revaluation.controller.ApplicationControllerTest
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.300 s -- in in.srmist.revaluation.controller.ApplicationControllerTest
+-------------------------------------------------------------------------------
+Test set: in.srmist.revaluation.service.CourseListValidatorTest
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.087 s -- in in.srmist.revaluation.service.CourseListValidatorTest
+-------------------------------------------------------------------------------
+Test set: in.srmist.revaluation.service.ExaminerServiceTest
+-------------------------------------------------------------------------------
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.301 s -- in in.srmist.revaluation.service.ExaminerServiceTest
+-------------------------------------------------------------------------------
+Test set: in.srmist.revaluation.worker.AssignExaminerWorkerTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.058 s -- in in.srmist.revaluation.worker.AssignExaminerWorkerTest

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_notify_stakeholder" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.52.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.10.0">
+
+<bpmn:process id="notify-stakeholder" name="Notify stakeholder" isExecutable="true">
+<bpmn:startEvent id="Start_Notify" name="Notification requested"><bpmn:outgoing>Flow_N1</bpmn:outgoing></bpmn:startEvent>
+<bpmn:serviceTask id="Task_SendEmail" name="Send email" zeebe:modelerTemplate="io.camunda.connectors.email.v1" zeebe:modelerTemplateVersion="8"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:email:1" retries="3" /><zeebe:ioMapping><zeebe:input source="smtp" target="protocol" /><zeebe:input source="sendEmailSmtp" target="data.smtpActionDiscriminator" /><zeebe:input source="simple" target="authentication.type" /><zeebe:input source="=camunda.secrets.SMTP_USERNAME" target="authentication.username" /><zeebe:input source="=camunda.secrets.SMTP_PASSWORD" target="authentication.password" /><zeebe:input source="=camunda.secrets.SMTP_HOST" target="data.smtpConfig.smtpHost" /><zeebe:input source="=camunda.secrets.SMTP_PORT" target="data.smtpConfig.smtpPort" /><zeebe:input source="NONE" target="data.smtpConfig.smtpCryptographicProtocol" /><zeebe:input source="examcell@srmist.test" target="data.smtpAction.from" /><zeebe:input source="=recipient.email" target="data.smtpAction.to" /><zeebe:input source="=subject" target="data.smtpAction.subject" /><zeebe:input source="PLAIN" target="data.smtpAction.contentType" /><zeebe:input source="=body" target="data.smtpAction.body" /><zeebe:input source="none" target="data.smtpAction.data_smtpAction_attachments_documentMode" /></zeebe:ioMapping><zeebe:taskHeaders><zeebe:header key="elementTemplateVersion" value="8" /><zeebe:header key="elementTemplateId" value="io.camunda.connectors.email.v1" /><zeebe:header key="errorExpression" value="=if error = null then null else bpmnError(&quot;EMAIL_FAILED&quot;, get or else(error.message, &quot;Email could not be sent&quot;), {emailError: get or else(error.message, &quot;Email could not be sent&quot;)})" /><zeebe:header key="retryBackoff" value="PT10S" /></zeebe:taskHeaders></bpmn:extensionElements><bpmn:incoming>Flow_N1</bpmn:incoming><bpmn:outgoing>Flow_N2</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:endEvent id="End_Sent" name="Notification sent"><bpmn:incoming>Flow_N2</bpmn:incoming></bpmn:endEvent>
+<bpmn:boundaryEvent id="Boundary_EmailFailed" name="Email failed" attachedToRef="Task_SendEmail"><bpmn:extensionElements><zeebe:ioMapping><zeebe:output source="=emailError" target="emailError" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:outgoing>Flow_N3</bpmn:outgoing><bpmn:errorEventDefinition id="ErrDef_EmailFailed" errorRef="Error_EmailFailed" /></bpmn:boundaryEvent>
+<bpmn:serviceTask id="Task_LogFailure" name="Log failed notification"><bpmn:extensionElements><zeebe:taskDefinition type="revaluation.log-notification-failure" retries="3" /></bpmn:extensionElements><bpmn:incoming>Flow_N3</bpmn:incoming><bpmn:outgoing>Flow_N4</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:endEvent id="End_Failed" name="Notification failed (logged)"><bpmn:incoming>Flow_N4</bpmn:incoming></bpmn:endEvent>
+<bpmn:sequenceFlow id="Flow_N1" sourceRef="Start_Notify" targetRef="Task_SendEmail" />
+<bpmn:sequenceFlow id="Flow_N2" sourceRef="Task_SendEmail" targetRef="End_Sent" />
+<bpmn:sequenceFlow id="Flow_N3" sourceRef="Boundary_EmailFailed" targetRef="Task_LogFailure" />
+<bpmn:sequenceFlow id="Flow_N4" sourceRef="Task_LogFailure" targetRef="End_Failed" />
+</bpmn:process>
+<bpmn:error id="Error_EmailFailed" name="Email failed" errorCode="EMAIL_FAILED" />
+<bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="notify-stakeholder">
+<bpmndi:BPMNShape id="Start_Notify_di" bpmnElement="Start_Notify"><dc:Bounds x="102" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_SendEmail_di" bpmnElement="Task_SendEmail"><dc:Bounds x="250" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Sent_di" bpmnElement="End_Sent"><dc:Bounds x="462" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Boundary_EmailFailed_di" bpmnElement="Boundary_EmailFailed"><dc:Bounds x="282" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_LogFailure_di" bpmnElement="Task_LogFailure"><dc:Bounds x="430" y="316" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Failed_di" bpmnElement="End_Failed"><dc:Bounds x="627" y="338" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNEdge id="Flow_N1_di" bpmnElement="Flow_N1"><di:waypoint x="138" y="200" /><di:waypoint x="250" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_N2_di" bpmnElement="Flow_N2"><di:waypoint x="350" y="200" /><di:waypoint x="462" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_N3_di" bpmnElement="Flow_N3"><di:waypoint x="300" y="258" /><di:waypoint x="300" y="356" /><di:waypoint x="430" y="356" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_N4_di" bpmnElement="Flow_N4"><di:waypoint x="530" y="356" /><di:waypoint x="627" y="356" /></bpmndi:BPMNEdge>
+</bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>

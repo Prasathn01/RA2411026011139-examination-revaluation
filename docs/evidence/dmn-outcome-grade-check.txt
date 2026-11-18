@@ -1,0 +1,22 @@
+Merged outcome + grade decision, evaluated on Camunda 8 Run 8.10.6 (POST /v2/decision-definitions/evaluation, decisionDefinitionId revaluation-outcome), 18 Nov 2026
+
+input:  {"revaluedMarks":74,"originalMarks":68,"markDifference":6}
+output: {"outcome":"RESULT_REVISED","refundFee":true,"grade":"A","gradePoint":8,"finalMarks":74}
+decisions evaluated: marksToGrade, revaluation-outcome
+
+input:  {"revaluedMarks":60,"originalMarks":68,"markDifference":-8}
+output: {"outcome":"NO_CHANGE","refundFee":false,"grade":"B+","gradePoint":7,"finalMarks":68}
+decisions evaluated: marksToGrade, revaluation-outcome
+
+input:  {"revaluedMarks":66,"originalMarks":47,"markDifference":19}
+output: {"outcome":"THIRD_VALUATION","refundFee":false,"grade":null,"gradePoint":null,"finalMarks":null}
+decisions evaluated: marksToGrade, revaluation-outcome
+
+input:  {"revaluedMarks":52,"originalMarks":47,"markDifference":5,"thirdValuationDone":true}
+output: {"outcome":"RESULT_REVISED","refundFee":true,"grade":"C","gradePoint":5,"finalMarks":52}
+decisions evaluated: marksToGrade, revaluation-outcome
+
+input:  {"revaluedMarks":30,"originalMarks":20,"markDifference":10}
+output: {"outcome":"RESULT_REVISED","refundFee":true,"grade":"F","gradePoint":0,"finalMarks":30}
+decisions evaluated: marksToGrade, revaluation-outcome
+

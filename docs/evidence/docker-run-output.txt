@@ -1,0 +1,59 @@
+Docker run, 18 Nov 2026, Windows 11, Docker Desktop (Engine 29.9.3)
+Fresh copy of the repository (no node_modules, target, data, .env); .env copied from .env.example.
+First 'docker compose up -d --build' (image downloads + Maven + npm builds): 535 s, exit code 0.
+
+== docker compose ps ==
+SERVICE             IMAGE                              STATUS
+backend             docker-test-backend                Up 2 minutes
+camunda-data-init   camunda/camunda:8.10.9             Exited (0) 2 minutes ago
+connectors          camunda/connectors-bundle:8.10.5   Up 2 minutes (healthy)
+frontend            docker-test-frontend               Up 2 minutes
+mailpit             axllent/mailpit:v1.34              Up About a minute (healthy)
+mock-services       docker-test-mock-services          Up 2 minutes
+orchestration       camunda/camunda:8.10.9             Up 2 minutes (healthy)
+postgres            postgres:16-alpine                 Up 2 minutes (healthy)
+
+== camunda-data-init log ==
+secret store ready: PAYMENT_API_URL RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RESULTS_API_URL SMTP_HOST SMTP_PASSWORD SMTP_PORT SMTP_USERNAME 
+
+== Secret names known to the engine (POST /v2/secrets/list; values are never returned) ==
+{"references":["camunda.secrets.PAYMENT_API_URL","camunda.secrets.RAZORPAY_KEY_ID","camunda.secrets.RAZORPAY_KEY_SECRET","camunda.secrets.RESULTS_API_URL","camunda.secrets.SMTP_HOST","camunda.secrets.SMTP_PASSWORD","camunda.secrets.SMTP_PORT","camunda.secrets.SMTP_USERNAME"]}
+
+== Scenario script (scratch script, through nginx on :5173) ==
+04:54:39 validation rejected as expected: 400 {"studentEmail":"must be a valid email address","registerNo":"must look like RA2411026011139"}
+04:54:39 application APP-261118102439575 process instance 2251799813685438
+04:54:44 21CSC306L rejected: Practical, project and internal assessments are not revalued
+04:54:44 21CSC305P payment link http://localhost:3000/pay/plink_f944e2fe6ac7d3
+04:54:44 21CSC303J payment link http://localhost:3000/pay/plink_85b761f5b8863a
+04:54:49 completed Task_Revalue for 21CSC305P as b.priya {"revaluedMarks":74,"examinerRemarks":"Docker run"}
+04:54:51 marks 140 rejected as expected: 400 {"revaluedMarks":"must be less than or equal to 100"}
+04:54:51 completed Task_Revalue for 21CSC303J as b.priya {"revaluedMarks":66,"examinerRemarks":"Docker run"}
+04:54:55 completed Task_ThirdValuation for 21CSC303J as senior.examiner {"thirdValuationMarks":52,"thirdValuationRemarks":"Docker run"}
+04:54:59 completed Task_ManualUpdate for 21CSC303J as examcell.officer {"actionTaken":"Entered 52 (C) by hand","actionCompleted":true}
+04:55:01 application status COMPLETED parent COMPLETED total refund 2000
+04:55:01  21CSC305P: CHANGED 68 -> 74 A refund 1000 examiner Dr. C. Ravi letter yes
+04:55:01  21CSC303J: CHANGED 47 -> 52 C refund 1000 examiner Dr. B. Priya letter yes
+04:55:01  21CSC306L: REJECTED 40 -> -  refund 0 examiner - letter no
+04:55:06 Mailpit messages: 6
+04:55:06   04:54:43  to ram@example.com  "Revaluation request not accepted - 21CSC306L"
+04:55:06   04:54:49  to ram@example.com  "Revaluation result - 21CSC305P"
+04:55:06   04:54:59  to ram@example.com  "Revaluation result - 21CSC303J"
+04:55:06   04:54:59  to ram@example.com  "Revaluation application APP-261118102439575 - summary"
+04:55:06   04:55:00  to hod.cse@srmist.test  "Revaluation application APP-261118102439575 - summary"
+04:55:06   04:55:00  to coe@srmist.test  "Revaluation application APP-261118102439575 - summary"
+04:55:07 timeline entries: 87
+APP_ID=APP-261118102439575
+
+== PostgreSQL (revaldb) ==
+   application_id    |  status   | course_code | course_status | final_marks | grade | refund_amount 
+---------------------+-----------+-------------+---------------+-------------+-------+---------------
+ APP-261118102439575 | COMPLETED | 21CSC303J   | CHANGED       |          52 | C     |       1000.00
+ APP-261118102439575 | COMPLETED | 21CSC305P   | CHANGED       |          74 | A     |       1000.00
+ APP-261118102439575 | COMPLETED | 21CSC306L   | REJECTED      |             |       |          0.00
+ APP-261118102529611 | COMPLETED | 21CSC306L   | REJECTED      |             |       |          0.00
+(4 rows)
+
+
+== Email failure (mailpit container stopped, application for 21CSC306L) ==
+Application APP-261118102529611 completed; timeline shows:
+Email NOT sent to STUDENT <ram@example.com> (...): org.eclipse.angus.mail.util.MailConnectException: Couldn't connect to host, port: mailpit, 1025 ... UnknownHostException: mailpit

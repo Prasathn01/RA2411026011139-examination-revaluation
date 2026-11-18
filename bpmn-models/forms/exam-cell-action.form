@@ -1,0 +1,36 @@
+{
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.10.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.40.0"
+  },
+  "schemaVersion": 19,
+  "id": "exam-cell-action",
+  "type": "default",
+  "components": [
+    {
+      "type": "text",
+      "text": "#### Request {{application.requestId}}\nCourse: **{{courseCode}} \u2013 {{courseName}}**  \nStudent register no.: {{registerNo}}",
+      "id": "Field_assign_examiner_0"
+    },
+    {
+      "type": "textarea",
+      "key": "actionTaken",
+      "label": "Action taken",
+      "validate": {
+        "required": true
+      },
+      "id": "Field_exam_cell_action_1"
+    },
+    {
+      "type": "checkbox",
+      "key": "actionCompleted",
+      "label": "Done",
+      "validate": {
+        "required": true
+      },
+      "id": "Field_exam_cell_action_2"
+    }
+  ]
+}

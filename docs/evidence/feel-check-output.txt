@@ -1,0 +1,147 @@
+
+OK   Course list check (valid)   [revaluation-application / Task_CheckApplication / script]
+  FEEL:   {courseCount: count(courses), hasDuplicates: count(courses) != count(distinct values(courses)), valid: count(courses) > 0 and count(courses) = count(distinct values(courses))}
+  input:  {"courses":["21CSC305P","21CSE251T"]}
+  output: {"courseCount":2,"hasDuplicates":false,"valid":true}
+
+OK   Course list check (duplicate)   [revaluation-application / Task_CheckApplication / script]
+  FEEL:   {courseCount: count(courses), hasDuplicates: count(courses) != count(distinct values(courses)), valid: count(courses) > 0 and count(courses) = count(distinct values(courses))}
+  input:  {"courses":["21CSC305P","21CSC305P"]}
+  output: {"courseCount":2,"hasDuplicates":true,"valid":false}
+
+OK   Gateway "Course list valid?"   [revaluation-application / Flow_ListValid / condition]
+  FEEL:   applicationCheck.valid = true
+  input:  {"applicationCheck":{"valid":true}}
+  output: true
+
+OK   Summarise application   [revaluation-application / Task_Summarise / script]
+  FEEL:   {total: count(courseResults), changed: count(courseResults[item.status = "CHANGED"]), unchanged: count(courseResults[item.status = "UNCHANGED"]), rejected: count(courseResults[item.status = "REJECTED"]), cancelled: count(courseResults[item.status = "CANCELLED"]), totalRefund: sum(for r in courseResults return r.refundAmount), lines: string join(for r in courseResults return r.courseCode + ": " + r.status + (if r.finalMarks != null then " (final marks " + string(r.finalMarks) + ", grade " + r.grade + ")" else " - " + r.reason), "\n")}
+  input:  {"courseResults":[{"courseCode":"21CSC305P","status":"CHANGED","reason":"Revaluation completed","finalMarks":74,"grade":"A","refundAmount":1000},{"courseCode":"21CSC306L","status":"REJECTED","reason":"Practical, project and internal assessments are not revalued","finalMarks":null,"grade":null,"refundAmount":0}]}
+  output: {"total":2,"changed":1,"unchanged":0,"rejected":1,"cancelled":0,"totalRefund":1000,"lines":"21CSC305P: CHANGED (final marks 74, grade A)\n21CSC306L: REJECTED - Practical, project and internal assessments are not revalued"}
+
+OK   Gateway "Any marks changed?"   [revaluation-application / Flow_Changed / condition]
+  FEEL:   summary.changed > 0
+  input:  {"summary":{"changed":1}}
+  output: true
+
+OK   Recipients when marks changed (sequential multi-instance list)   [revaluation-application / Task_PrepareRevised / script]
+  FEEL:   [{role: "STUDENT", name: studentName, email: studentEmail}, {role: "HOD", name: "Head of Department", email: hodEmail}, {role: "COE", name: "Controller of Examinations", email: coeEmail}]
+  input:  {"studentName":"Ram Prasath N","studentEmail":"ram@example.com","hodEmail":"hod.cse@srmist.test","coeEmail":"coe@srmist.test"}
+  output: [{"role":"STUDENT","name":"Ram Prasath N","email":"ram@example.com"},{"role":"HOD","name":"Head of Department","email":"hod.cse@srmist.test"},{"role":"COE","name":"Controller of Examinations","email":"coe@srmist.test"}]
+
+OK   Summary email subject   [revaluation-application / Call_NotifyStakeholders / subject]
+  FEEL:   "Revaluation application " + applicationId + " - summary"
+  input:  {"applicationId":"APP-261118081942740"}
+  output: "Revaluation application APP-261118081942740 - summary"
+
+OK   Results API URL   [course-revaluation / Task_FetchResult / url]
+  FEEL:   camunda.secrets.RESULTS_API_URL + "/results/" + registerNo + "-" + courseCode
+  input:  {"camunda":{"secrets":{"RESULTS_API_URL":"http://localhost:3000"}},"registerNo":"RA2411026011139","courseCode":"21CSC305P"}
+  output: "http://localhost:3000/results/RA2411026011139-21CSC305P"
+
+OK   Fetch result: 404 becomes RESULT_NOT_FOUND   [course-revaluation / Task_FetchResult / header:errorExpression]
+  FEEL:   if error.code = "404" then bpmnError("RESULT_NOT_FOUND", "No published result for this course") else null
+  input:  {"error":{"code":"404"}}
+  output: {"code":"RESULT_NOT_FOUND","message":"No published result for this course"}
+
+OK   Gateway "Eligible?"   [course-revaluation / Flow_Eligible / condition]
+  FEEL:   eligibility.eligible = true
+  input:  {"eligibility":{"eligible":true}}
+  output: true
+
+OK   Payment link request body   [course-revaluation / Task_PaymentLink / body]
+  FEEL:   {amount: eligibility.fee * 100, currency: "INR", description: "Revaluation fee - " + courseCode, reference_id: application.requestId, customer: {name: studentName, email: studentEmail}, notify: {email: true}}
+  input:  {"eligibility":{"fee":1000},"courseCode":"21CSC305P","application":{"requestId":"REV-RA2411026011139-21CSC305P-44582966"},"studentName":"Ram Prasath N","studentEmail":"ram@example.com"}
+  output: {"amount":100000,"currency":"INR","description":"Revaluation fee - 21CSC305P","reference_id":"REV-RA2411026011139-21CSC305P-44582966","customer":{"name":"Ram Prasath N","email":"ram@example.com"},"notify":{"email":true}}
+
+OK   Payment link: HTTP 503 becomes PAYMENT_FAILED   [course-revaluation / Task_PaymentLink / header:errorExpression]
+  FEEL:   if error != null and error.code != null and matches(error.code, "^[45][0-9][0-9]$") then bpmnError("PAYMENT_FAILED", "Payment service returned HTTP " + error.code) else null
+  input:  {"error":{"code":"503"}}
+  output: {"code":"PAYMENT_FAILED","message":"Payment service returned HTTP 503"}
+
+OK   Payment window timer (no override)   [course-revaluation / TimerDef_PaymentDeadline / timer]
+  FEEL:   get or else(paymentWindow, "PT48H")
+  input:  {}
+  output: "PT48H"
+
+OK   Payment window timer (demo override)   [course-revaluation / TimerDef_PaymentDeadline / timer]
+  FEEL:   get or else(paymentWindow, "PT48H")
+  input:  {"paymentWindow":"PT1M"}
+  output: "PT1M"
+
+OK   Message correlation key   [course-revaluation / Message_FeePaid / correlation]
+  FEEL:   application.requestId
+  input:  {"application":{"requestId":"REV-RA2411026011139-21CSC305P-44582966"}}
+  output: "REV-RA2411026011139-21CSC305P-44582966"
+
+OK   Revaluer from the login worker (output mapping)   [course-revaluation / Task_SendLogin / examiner]
+  FEEL:   assignedExaminer
+  input:  {"assignedExaminer":{"id":"EXM-103","name":"Dr. C. Ravi","email":"c.ravi@examiners.test","username":"exm-103"}}
+  output: {"id":"EXM-103","name":"Dr. C. Ravi","email":"c.ravi@examiners.test","username":"exm-103"}
+
+OK   Third examiner from the same worker (output mapping)   [course-revaluation / Task_SendLoginThird / thirdExaminer]
+  FEEL:   assignedExaminer
+  input:  {"assignedExaminer":{"id":"EXM-103","name":"Dr. C. Ravi","email":"c.ravi@examiners.test","username":"exm-103"}}
+  output: {"id":"EXM-103","name":"Dr. C. Ravi","email":"c.ravi@examiners.test","username":"exm-103"}
+
+OK   Third valuation replaces the revalued marks (output mapping)   [course-revaluation / Task_ThirdValuation / revaluedMarks]
+  FEEL:   thirdValuationMarks
+  input:  {"thirdValuationMarks":52}
+  output: 52
+
+OK   Compare marks   [course-revaluation / Task_CompareMarks / script]
+  FEEL:   revaluedMarks - originalMarks
+  input:  {"revaluedMarks":66,"originalMarks":47}
+  output: 19
+
+OK   Gateway "Third valuation needed?"   [course-revaluation / Flow_ThirdNeeded / condition]
+  FEEL:   decision.outcome = "THIRD_VALUATION"
+  input:  {"decision":{"outcome":"THIRD_VALUATION"}}
+  output: true
+
+OK   Examiner deadline timer (no override)   [course-revaluation / TimerDef_ExaminerDeadline / timer]
+  FEEL:   get or else(examinerDeadline, "PT72H")
+  input:  {}
+  output: "PT72H"
+
+OK   Gateway "Fee refundable?"   [course-revaluation / Flow_Refund / condition]
+  FEEL:   decision.refundFee = true
+  input:  {"decision":{"refundFee":true}}
+  output: true
+
+OK   Refund URL   [course-revaluation / Task_Refund / url]
+  FEEL:   camunda.secrets.PAYMENT_API_URL + "/payments/" + paymentId + "/refund"
+  input:  {"camunda":{"secrets":{"PAYMENT_API_URL":"http://localhost:3000/razorpay/v1"}},"paymentId":"pay_123"}
+  output: "http://localhost:3000/razorpay/v1/payments/pay_123/refund"
+
+OK   Record course result (changed)   [course-revaluation / Task_RecordOutcome / script]
+  FEEL:   {courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: if decision.outcome = "RESULT_REVISED" then "CHANGED" else "UNCHANGED", reason: "Revaluation completed", originalMarks: originalMarks, finalMarks: decision.finalMarks, grade: decision.grade, refundAmount: if decision.refundFee then eligibility.fee else 0, examinerName: if get or else(thirdValuationDone, false) then examiner.name + " (third valuation: " + thirdExaminer.name + ")" else examiner.name, letterUrl: letter.url}
+  input:  {"courseCode":"21CSC305P","courseName":"Machine Learning","application":{"requestId":"REV-1"},"decision":{"outcome":"RESULT_REVISED","finalMarks":74,"refundFee":true},"originalMarks":68,"eligibility":{"fee":1000},"examiner":{"name":"Dr. C. Ravi"},"letter":{"url":"http://localhost:3000/letters/x.html"}}
+  output: {"courseCode":"21CSC305P","courseName":"Machine Learning","requestId":"REV-1","status":"CHANGED","reason":"Revaluation completed","originalMarks":68,"finalMarks":74,"grade":null,"refundAmount":1000,"examinerName":"Dr. C. Ravi","letterUrl":"http://localhost:3000/letters/x.html"}
+
+OK   Record course result (grade from the outcome DMN, after a third valuation)   [course-revaluation / Task_RecordOutcome / script]
+  FEEL:   {courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: if decision.outcome = "RESULT_REVISED" then "CHANGED" else "UNCHANGED", reason: "Revaluation completed", originalMarks: originalMarks, finalMarks: decision.finalMarks, grade: decision.grade, refundAmount: if decision.refundFee then eligibility.fee else 0, examinerName: if get or else(thirdValuationDone, false) then examiner.name + " (third valuation: " + thirdExaminer.name + ")" else examiner.name, letterUrl: letter.url}
+  input:  {"courseCode":"21CSC303J","courseName":"Operating Systems","application":{"requestId":"REV-2"},"decision":{"outcome":"RESULT_REVISED","finalMarks":52,"refundFee":true,"grade":"C"},"originalMarks":47,"thirdValuationDone":true,"eligibility":{"fee":1000},"examiner":{"name":"Dr. B. Priya"},"thirdExaminer":{"name":"Dr. A. Kumar"},"letter":{"url":"http://localhost:3000/letters/y.html"}}
+  output: {"courseCode":"21CSC303J","courseName":"Operating Systems","requestId":"REV-2","status":"CHANGED","reason":"Revaluation completed","originalMarks":47,"finalMarks":52,"grade":"C","refundAmount":1000,"examinerName":"Dr. B. Priya (third valuation: Dr. A. Kumar)","letterUrl":"http://localhost:3000/letters/y.html"}
+
+OK   Record rejection when the result was not found (no eligibility yet)   [course-revaluation / Task_RecordRejection / script]
+  FEEL:   {courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: "REJECTED", reason: get or else(eligibility.reason, "No published result was found for this course."), originalMarks: originalMarks, finalMarks: null, grade: null, refundAmount: 0, examinerName: null, letterUrl: null}
+  input:  {"courseCode":"21CSC304T","courseName":null,"originalMarks":null}
+  output: {"courseCode":"21CSC304T","courseName":null,"requestId":null,"status":"REJECTED","reason":"No published result was found for this course.","originalMarks":null,"finalMarks":null,"grade":null,"refundAmount":0,"examinerName":null,"letterUrl":null}
+
+OK   requestId passed to notify-stakeholder (null before registration)   [course-revaluation / Call_NotifyRejection / requestId]
+  FEEL:   get or else(application.requestId, null)
+  input:  {}
+  output: null
+
+OK   Email failure becomes EMAIL_FAILED with the message as a variable   [notify-stakeholder / Task_SendEmail / header:errorExpression]
+  FEEL:   if error = null then null else bpmnError("EMAIL_FAILED", get or else(error.message, "Email could not be sent"), {emailError: get or else(error.message, "Email could not be sent")})
+  input:  {"error":{"message":"Connection refused"}}
+  output: {"code":"EMAIL_FAILED","message":"Connection refused","variables":{"emailError":"Connection refused"}}
+
+OK   Email success raises no error   [notify-stakeholder / Task_SendEmail / header:errorExpression]
+  FEEL:   if error = null then null else bpmnError("EMAIL_FAILED", get or else(error.message, "Email could not be sent"), {emailError: get or else(error.message, "Email could not be sent")})
+  input:  {"error":null}
+  output: null
+
+All checks passed.

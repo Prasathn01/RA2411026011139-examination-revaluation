@@ -1,0 +1,25 @@
+flowchart TB
+  UI["<b>React portal</b> (Vite + Tailwind)<br/>Apply form · Live tracker · Task inbox"]
+  subgraph BE["Spring Boot backend · port 8081"]
+    direction LR
+    C["REST controllers"] --> S["Services"] --> R["JPA repositories"]
+    W["@JobWorker classes"] --> S
+  end
+  DB[("PostgreSQL in Docker<br/>H2 file when run locally")]
+  subgraph CAM["Camunda 8.10 Orchestration Cluster · port 8080 / 26500"]
+    direction LR
+    Z["Zeebe engine<br/>3 BPMN · 1 DMN · 4 forms"]
+    O["Operate · Tasklist"]
+  end
+  CN["Connector runtime<br/>REST + Email connectors<br/>secrets from SECRET_* env vars"]
+  M["Mock external systems · port 3000<br/>results API · payment API · document store"]
+  MP["Mailpit · port 8025<br/>test email inbox"]
+
+  UI -->|"JSON over HTTP /api"| C
+  S -->|"start · search · complete task · publish message"| Z
+  W <-->|"activate / complete jobs (gRPC)"| Z
+  R --> DB
+  Z <-->|"connector jobs"| CN
+  CN -->|"REST calls"| M
+  CN -->|"SMTP"| MP
+  S -->|"payment status · letters"| M

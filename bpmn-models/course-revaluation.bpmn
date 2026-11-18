@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_course_revaluation" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.52.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.10.0">
+
+<bpmn:process id="course-revaluation" name="Course revaluation" isExecutable="true">
+<bpmn:startEvent id="Start_Course" name="Course revaluation requested"><bpmn:outgoing>Flow_01</bpmn:outgoing></bpmn:startEvent>
+<bpmn:serviceTask id="Task_FetchResult" name="Fetch published result" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2" zeebe:modelerTemplateVersion="18"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" /><zeebe:ioMapping><zeebe:input source="noAuth" target="authentication.type" /><zeebe:input source="GET" target="method" /><zeebe:input source="=camunda.secrets.RESULTS_API_URL + &quot;/results/&quot; + registerNo + &quot;-&quot; + courseCode" target="url" /><zeebe:input source="false" target="followRedirects" /><zeebe:input source="JSON" target="documentReturnFormat.choice" /><zeebe:input source="20" target="connectionTimeoutInSeconds" /><zeebe:input source="20" target="readTimeoutInSeconds" /></zeebe:ioMapping><zeebe:taskHeaders><zeebe:header key="elementTemplateVersion" value="18" /><zeebe:header key="elementTemplateId" value="io.camunda.connectors.HttpJson.v2" /><zeebe:header key="resultExpression" value="={courseName: response.body.courseName, courseType: response.body.courseType, originalMarks: response.body.marks, originalGrade: response.body.grade, resultPublishedOn: response.body.publishedOn, originalExaminerId: response.body.examinerId}" /><zeebe:header key="errorExpression" value="=if error.code = &quot;404&quot; then bpmnError(&quot;RESULT_NOT_FOUND&quot;, &quot;No published result for this course&quot;) else null" /><zeebe:header key="retryBackoff" value="PT5S" /></zeebe:taskHeaders></bpmn:extensionElements><bpmn:incoming>Flow_01</bpmn:incoming><bpmn:outgoing>Flow_02</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:boundaryEvent id="Boundary_ResultNotFound" name="Result not found" attachedToRef="Task_FetchResult"><bpmn:outgoing>Flow_ResultNotFound</bpmn:outgoing><bpmn:errorEventDefinition id="ErrDef_ResultNotFound" errorRef="Error_ResultNotFound" /></bpmn:boundaryEvent>
+<bpmn:scriptTask id="Task_Register" name="Register course request"><bpmn:extensionElements><zeebe:script expression="={requestId: &quot;REV-&quot; + registerNo + &quot;-&quot; + courseCode + &quot;-&quot; + string(modulo(floor((now() - date and time(&quot;2026-01-01T00:00:00@UTC&quot;)) / duration(&quot;PT0.001S&quot;)), 100000000)), daysSinceResult: (today() - date(resultPublishedOn)).days, submittedOn: string(today())}" resultVariable="application" /></bpmn:extensionElements><bpmn:incoming>Flow_02</bpmn:incoming><bpmn:outgoing>Flow_03</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:businessRuleTask id="Task_Eligibility" name="Check eligibility and fee"><bpmn:extensionElements><zeebe:calledDecision decisionId="revaluation-eligibility" resultVariable="eligibility" /></bpmn:extensionElements><bpmn:incoming>Flow_03</bpmn:incoming><bpmn:outgoing>Flow_04</bpmn:outgoing></bpmn:businessRuleTask>
+<bpmn:exclusiveGateway id="Gateway_Eligible" name="Eligible?" default="Flow_NotEligible"><bpmn:incoming>Flow_04</bpmn:incoming><bpmn:outgoing>Flow_Eligible</bpmn:outgoing><bpmn:outgoing>Flow_NotEligible</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:subProcess id="Sub_FeePayment" name="Fee payment"><bpmn:incoming>Flow_Eligible</bpmn:incoming><bpmn:outgoing>Flow_08</bpmn:outgoing>
+<bpmn:startEvent id="Start_Payment" name="Payment started"><bpmn:outgoing>Flow_P1</bpmn:outgoing></bpmn:startEvent>
+<bpmn:serviceTask id="Task_PaymentLink" name="Create fee payment link" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2" zeebe:modelerTemplateVersion="18"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" /><zeebe:ioMapping><zeebe:input source="basic" target="authentication.type" /><zeebe:input source="=camunda.secrets.RAZORPAY_KEY_ID" target="authentication.username" /><zeebe:input source="=camunda.secrets.RAZORPAY_KEY_SECRET" target="authentication.password" /><zeebe:input source="POST" target="method" /><zeebe:input source="=camunda.secrets.PAYMENT_API_URL + &quot;/payment_links&quot;" target="url" /><zeebe:input source="false" target="followRedirects" /><zeebe:input source="JSON" target="documentReturnFormat.choice" /><zeebe:input source="20" target="connectionTimeoutInSeconds" /><zeebe:input source="20" target="readTimeoutInSeconds" /><zeebe:input source="={amount: eligibility.fee * 100, currency: &quot;INR&quot;, description: &quot;Revaluation fee - &quot; + courseCode, reference_id: application.requestId, customer: {name: studentName, email: studentEmail}, notify: {email: true}}" target="body" /><zeebe:input source="false" target="ignoreNullValues" /></zeebe:ioMapping><zeebe:taskHeaders><zeebe:header key="elementTemplateVersion" value="18" /><zeebe:header key="elementTemplateId" value="io.camunda.connectors.HttpJson.v2" /><zeebe:header key="resultExpression" value="={paymentLinkId: response.body.id, paymentUrl: response.body.short_url}" /><zeebe:header key="errorExpression" value="=if error != null and error.code != null and matches(error.code, &quot;^[45][0-9][0-9]$&quot;) then bpmnError(&quot;PAYMENT_FAILED&quot;, &quot;Payment service returned HTTP &quot; + error.code) else null" /><zeebe:header key="retryBackoff" value="PT5S" /></zeebe:taskHeaders></bpmn:extensionElements><bpmn:incoming>Flow_P1</bpmn:incoming><bpmn:outgoing>Flow_P2</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:intermediateCatchEvent id="Catch_FeePaid" name="Fee paid"><bpmn:incoming>Flow_P2</bpmn:incoming><bpmn:outgoing>Flow_P3</bpmn:outgoing><bpmn:messageEventDefinition id="Catch_FeePaid_def" messageRef="Message_FeePaid" /></bpmn:intermediateCatchEvent>
+<bpmn:endEvent id="End_FeeReceived" name="Fee received"><bpmn:incoming>Flow_P3</bpmn:incoming></bpmn:endEvent>
+<bpmn:sequenceFlow id="Flow_P1" sourceRef="Start_Payment" targetRef="Task_PaymentLink" />
+<bpmn:sequenceFlow id="Flow_P2" sourceRef="Task_PaymentLink" targetRef="Catch_FeePaid" />
+<bpmn:sequenceFlow id="Flow_P3" sourceRef="Catch_FeePaid" targetRef="End_FeeReceived" />
+</bpmn:subProcess>
+<bpmn:boundaryEvent id="Boundary_PaymentDeadline" name="Payment window over (48 h)" attachedToRef="Sub_FeePayment"><bpmn:outgoing>Flow_Unpaid</bpmn:outgoing><bpmn:timerEventDefinition id="TimerDef_PaymentDeadline"><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">=get or else(paymentWindow, &quot;PT48H&quot;)</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>
+<bpmn:boundaryEvent id="Boundary_PaymentFailed" name="Payment failed" attachedToRef="Sub_FeePayment"><bpmn:outgoing>Flow_PayFailed</bpmn:outgoing><bpmn:errorEventDefinition id="ErrDef_PaymentFailed" errorRef="Error_PaymentFailed" /></bpmn:boundaryEvent>
+<bpmn:subProcess id="Sub_Revaluation" name="Revaluation"><bpmn:incoming>Flow_08</bpmn:incoming><bpmn:outgoing>Flow_15</bpmn:outgoing>
+<bpmn:startEvent id="Start_Reval" name="Fee received"><bpmn:outgoing>Flow_R1</bpmn:outgoing></bpmn:startEvent>
+<bpmn:userTask id="Task_CoeAssign" name="CoE assigns examiner"><bpmn:extensionElements><zeebe:userTask /><zeebe:formDefinition formId="assign-examiner" /><zeebe:assignmentDefinition candidateGroups="coe" /></bpmn:extensionElements><bpmn:incoming>Flow_R1</bpmn:incoming><bpmn:outgoing>Flow_R2</bpmn:outgoing></bpmn:userTask>
+<bpmn:serviceTask id="Task_SendLogin" name="Email examiner login"><bpmn:extensionElements><zeebe:taskDefinition type="revaluation.send-examiner-login" retries="3" /><zeebe:ioMapping><zeebe:input source="REVALUATION" target="round" /><zeebe:output source="=assignedExaminer" target="examiner" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_R2</bpmn:incoming><bpmn:outgoing>Flow_R3</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:userTask id="Task_Revalue" name="Revalue answer script (blind)"><bpmn:extensionElements><zeebe:userTask /><zeebe:formDefinition formId="revalue-script" /><zeebe:assignmentDefinition assignee="=examiner.username" /></bpmn:extensionElements><bpmn:incoming>Flow_R3</bpmn:incoming><bpmn:outgoing>Flow_R6</bpmn:outgoing></bpmn:userTask>
+<bpmn:exclusiveGateway id="Gateway_JoinValuation"><bpmn:incoming>Flow_R6</bpmn:incoming><bpmn:incoming>Flow_ThirdLoop</bpmn:incoming><bpmn:outgoing>Flow_R7</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:scriptTask id="Task_CompareMarks" name="Compare marks"><bpmn:extensionElements><zeebe:script expression="=revaluedMarks - originalMarks" resultVariable="markDifference" /></bpmn:extensionElements><bpmn:incoming>Flow_R7</bpmn:incoming><bpmn:outgoing>Flow_R8</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:businessRuleTask id="Task_DecideOutcome" name="Decide outcome and grade"><bpmn:extensionElements><zeebe:calledDecision decisionId="revaluation-outcome" resultVariable="decision" /></bpmn:extensionElements><bpmn:incoming>Flow_R8</bpmn:incoming><bpmn:outgoing>Flow_R9</bpmn:outgoing></bpmn:businessRuleTask>
+<bpmn:exclusiveGateway id="Gateway_ThirdValuation" name="Third valuation needed?" default="Flow_NoThird"><bpmn:incoming>Flow_R9</bpmn:incoming><bpmn:outgoing>Flow_ThirdNeeded</bpmn:outgoing><bpmn:outgoing>Flow_NoThird</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:userTask id="Task_CoeAssignThird" name="CoE assigns third examiner"><bpmn:extensionElements><zeebe:userTask /><zeebe:formDefinition formId="assign-examiner" /><zeebe:assignmentDefinition candidateGroups="coe" /></bpmn:extensionElements><bpmn:incoming>Flow_ThirdNeeded</bpmn:incoming><bpmn:outgoing>Flow_T1</bpmn:outgoing></bpmn:userTask>
+<bpmn:serviceTask id="Task_SendLoginThird" name="Email third examiner login"><bpmn:extensionElements><zeebe:taskDefinition type="revaluation.send-examiner-login" retries="3" /><zeebe:ioMapping><zeebe:input source="THIRD_VALUATION" target="round" /><zeebe:output source="=assignedExaminer" target="thirdExaminer" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_T1</bpmn:incoming><bpmn:outgoing>Flow_T2</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:userTask id="Task_ThirdValuation" name="Third valuation"><bpmn:extensionElements><zeebe:userTask /><zeebe:formDefinition formId="third-valuation" /><zeebe:assignmentDefinition assignee="=thirdExaminer.username" /><zeebe:ioMapping><zeebe:output source="=thirdValuationMarks" target="revaluedMarks" /><zeebe:output source="=thirdValuationMarks" target="thirdValuationMarks" /><zeebe:output source="=thirdValuationRemarks" target="thirdValuationRemarks" /><zeebe:output source="=true" target="thirdValuationDone" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_T2</bpmn:incoming><bpmn:outgoing>Flow_ThirdLoop</bpmn:outgoing></bpmn:userTask>
+<bpmn:endEvent id="End_RevalDone" name="Revaluation done"><bpmn:incoming>Flow_NoThird</bpmn:incoming></bpmn:endEvent>
+<bpmn:sequenceFlow id="Flow_R1" sourceRef="Start_Reval" targetRef="Task_CoeAssign" />
+<bpmn:sequenceFlow id="Flow_R2" sourceRef="Task_CoeAssign" targetRef="Task_SendLogin" />
+<bpmn:sequenceFlow id="Flow_R3" sourceRef="Task_SendLogin" targetRef="Task_Revalue" />
+<bpmn:sequenceFlow id="Flow_R6" sourceRef="Task_Revalue" targetRef="Gateway_JoinValuation" />
+<bpmn:sequenceFlow id="Flow_R7" sourceRef="Gateway_JoinValuation" targetRef="Task_CompareMarks" />
+<bpmn:sequenceFlow id="Flow_R8" sourceRef="Task_CompareMarks" targetRef="Task_DecideOutcome" />
+<bpmn:sequenceFlow id="Flow_R9" sourceRef="Task_DecideOutcome" targetRef="Gateway_ThirdValuation" />
+<bpmn:sequenceFlow id="Flow_ThirdNeeded" name="Yes" sourceRef="Gateway_ThirdValuation" targetRef="Task_CoeAssignThird"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision.outcome = &quot;THIRD_VALUATION&quot;</bpmn:conditionExpression></bpmn:sequenceFlow>
+<bpmn:sequenceFlow id="Flow_T1" sourceRef="Task_CoeAssignThird" targetRef="Task_SendLoginThird" />
+<bpmn:sequenceFlow id="Flow_T2" sourceRef="Task_SendLoginThird" targetRef="Task_ThirdValuation" />
+<bpmn:sequenceFlow id="Flow_ThirdLoop" sourceRef="Task_ThirdValuation" targetRef="Gateway_JoinValuation" />
+<bpmn:sequenceFlow id="Flow_NoThird" name="No" sourceRef="Gateway_ThirdValuation" targetRef="End_RevalDone" />
+</bpmn:subProcess>
+<bpmn:boundaryEvent id="Boundary_ExaminerDeadline" name="Not done in 72 h" cancelActivity="false" attachedToRef="Sub_Revaluation"><bpmn:outgoing>Flow_13</bpmn:outgoing><bpmn:timerEventDefinition id="TimerDef_ExaminerDeadline"><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">=get or else(examinerDeadline, &quot;PT72H&quot;)</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>
+<bpmn:userTask id="Task_Escalate" name="Escalate delay to CoE"><bpmn:extensionElements><zeebe:userTask /><zeebe:formDefinition formId="exam-cell-action" /><zeebe:assignmentDefinition candidateGroups="coe" /></bpmn:extensionElements><bpmn:incoming>Flow_13</bpmn:incoming><bpmn:outgoing>Flow_14</bpmn:outgoing></bpmn:userTask>
+<bpmn:endEvent id="End_Escalated" name="Delay escalated"><bpmn:incoming>Flow_14</bpmn:incoming></bpmn:endEvent>
+<bpmn:serviceTask id="Task_PublishResult" name="Publish result" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2" zeebe:modelerTemplateVersion="18"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" /><zeebe:ioMapping><zeebe:input source="noAuth" target="authentication.type" /><zeebe:input source="PATCH" target="method" /><zeebe:input source="=camunda.secrets.RESULTS_API_URL + &quot;/results/&quot; + registerNo + &quot;-&quot; + courseCode" target="url" /><zeebe:input source="false" target="followRedirects" /><zeebe:input source="JSON" target="documentReturnFormat.choice" /><zeebe:input source="20" target="connectionTimeoutInSeconds" /><zeebe:input source="20" target="readTimeoutInSeconds" /><zeebe:input source="={revaluation: {requestId: application.requestId, outcome: decision.outcome, finalMarks: decision.finalMarks, finalGrade: decision.grade, completedOn: string(today())}}" target="body" /><zeebe:input source="false" target="ignoreNullValues" /></zeebe:ioMapping><zeebe:taskHeaders><zeebe:header key="elementTemplateVersion" value="18" /><zeebe:header key="elementTemplateId" value="io.camunda.connectors.HttpJson.v2" /><zeebe:header key="resultExpression" value="={resultUpdatedAt: response.body.updatedAt}" /><zeebe:header key="errorExpression" value="=if error != null then bpmnError(&quot;RESULT_UPDATE_FAILED&quot;, &quot;Result could not be published&quot;) else null" /><zeebe:header key="retryBackoff" value="PT5S" /></zeebe:taskHeaders></bpmn:extensionElements><bpmn:incoming>Flow_15</bpmn:incoming><bpmn:outgoing>Flow_17</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:boundaryEvent id="Boundary_PublishFailed" name="Update failed" attachedToRef="Task_PublishResult"><bpmn:outgoing>Flow_PublishFailed</bpmn:outgoing><bpmn:errorEventDefinition id="ErrDef_PublishFailed" errorRef="Error_PublishFailed" /></bpmn:boundaryEvent>
+<bpmn:userTask id="Task_ManualUpdate" name="Update result manually"><bpmn:extensionElements><zeebe:userTask /><zeebe:formDefinition formId="exam-cell-action" /><zeebe:assignmentDefinition candidateGroups="coe" /></bpmn:extensionElements><bpmn:incoming>Flow_PublishFailed</bpmn:incoming><bpmn:outgoing>Flow_18</bpmn:outgoing></bpmn:userTask>
+<bpmn:exclusiveGateway id="Gateway_JoinPublish"><bpmn:incoming>Flow_17</bpmn:incoming><bpmn:incoming>Flow_18</bpmn:incoming><bpmn:outgoing>Flow_19</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:exclusiveGateway id="Gateway_Refund" name="Fee refundable?" default="Flow_NoRefund"><bpmn:incoming>Flow_19</bpmn:incoming><bpmn:outgoing>Flow_Refund</bpmn:outgoing><bpmn:outgoing>Flow_NoRefund</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:serviceTask id="Task_Refund" name="Refund revaluation fee" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2" zeebe:modelerTemplateVersion="18"><bpmn:extensionElements><zeebe:taskDefinition type="io.camunda:http-json:1" retries="3" /><zeebe:ioMapping><zeebe:input source="basic" target="authentication.type" /><zeebe:input source="=camunda.secrets.RAZORPAY_KEY_ID" target="authentication.username" /><zeebe:input source="=camunda.secrets.RAZORPAY_KEY_SECRET" target="authentication.password" /><zeebe:input source="POST" target="method" /><zeebe:input source="=camunda.secrets.PAYMENT_API_URL + &quot;/payments/&quot; + paymentId + &quot;/refund&quot;" target="url" /><zeebe:input source="false" target="followRedirects" /><zeebe:input source="JSON" target="documentReturnFormat.choice" /><zeebe:input source="20" target="connectionTimeoutInSeconds" /><zeebe:input source="20" target="readTimeoutInSeconds" /><zeebe:input source="={amount: eligibility.fee * 100, notes: {requestId: application.requestId, reason: &quot;Marks increased on revaluation&quot;}}" target="body" /><zeebe:input source="false" target="ignoreNullValues" /></zeebe:ioMapping><zeebe:taskHeaders><zeebe:header key="elementTemplateVersion" value="18" /><zeebe:header key="elementTemplateId" value="io.camunda.connectors.HttpJson.v2" /><zeebe:header key="resultExpression" value="={refundId: response.body.id, refundStatus: response.body.status}" /><zeebe:header key="retryBackoff" value="PT5S" /></zeebe:taskHeaders></bpmn:extensionElements><bpmn:incoming>Flow_Refund</bpmn:incoming><bpmn:outgoing>Flow_20</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:exclusiveGateway id="Gateway_JoinRefund"><bpmn:incoming>Flow_NoRefund</bpmn:incoming><bpmn:incoming>Flow_20</bpmn:incoming><bpmn:outgoing>Flow_21</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:serviceTask id="Task_GenerateLetter" name="Generate outcome letter"><bpmn:extensionElements><zeebe:taskDefinition type="revaluation.generate-letter" retries="3" /></bpmn:extensionElements><bpmn:incoming>Flow_21</bpmn:incoming><bpmn:outgoing>Flow_22</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:scriptTask id="Task_RecordOutcome" name="Record course result"><bpmn:extensionElements><zeebe:script expression="={courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: if decision.outcome = &quot;RESULT_REVISED&quot; then &quot;CHANGED&quot; else &quot;UNCHANGED&quot;, reason: &quot;Revaluation completed&quot;, originalMarks: originalMarks, finalMarks: decision.finalMarks, grade: decision.grade, refundAmount: if decision.refundFee then eligibility.fee else 0, examinerName: if get or else(thirdValuationDone, false) then examiner.name + &quot; (third valuation: &quot; + thirdExaminer.name + &quot;)&quot; else examiner.name, letterUrl: letter.url}" resultVariable="courseResult" /></bpmn:extensionElements><bpmn:incoming>Flow_22</bpmn:incoming><bpmn:outgoing>Flow_23</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:callActivity id="Call_NotifyOutcome" name="Notify student of outcome"><bpmn:extensionElements><zeebe:calledElement processId="notify-stakeholder" propagateAllChildVariables="false" propagateAllParentVariables="false" /><zeebe:ioMapping><zeebe:input source="={role: &quot;STUDENT&quot;, name: studentName, email: studentEmail}" target="recipient" /><zeebe:input source="=&quot;Revaluation result - &quot; + courseCode" target="subject" /><zeebe:input source="=&quot;Dear &quot; + studentName + &quot;,
+
+Revaluation of &quot; + courseCode + &quot; (&quot; + courseName + &quot;) is complete.
+Marks before: &quot; + string(originalMarks) + &quot;
+Final marks: &quot; + string(decision.finalMarks) + &quot; (grade &quot; + decision.grade + &quot;)
+&quot; + (if decision.refundFee then &quot;Your revaluation fee has been refunded.
+&quot; else &quot;&quot;) + &quot;Outcome letter: &quot; + letter.url + &quot;
+
+Controller of Examinations&quot;" target="body" /><zeebe:input source="=applicationId" target="applicationId" /><zeebe:input source="=get or else(application.requestId, null)" target="requestId" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_23</bpmn:incoming><bpmn:outgoing>Flow_24</bpmn:outgoing></bpmn:callActivity>
+<bpmn:endEvent id="End_Completed" name="Revaluation completed"><bpmn:incoming>Flow_24</bpmn:incoming></bpmn:endEvent>
+<bpmn:exclusiveGateway id="Gateway_JoinRejection"><bpmn:incoming>Flow_NotEligible</bpmn:incoming><bpmn:incoming>Flow_ResultNotFound</bpmn:incoming><bpmn:outgoing>Flow_05</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:scriptTask id="Task_RecordRejection" name="Record rejection"><bpmn:extensionElements><zeebe:script expression="={courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: &quot;REJECTED&quot;, reason: get or else(eligibility.reason, &quot;No published result was found for this course.&quot;), originalMarks: originalMarks, finalMarks: null, grade: null, refundAmount: 0, examinerName: null, letterUrl: null}" resultVariable="courseResult" /></bpmn:extensionElements><bpmn:incoming>Flow_05</bpmn:incoming><bpmn:outgoing>Flow_06</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:callActivity id="Call_NotifyRejection" name="Notify rejection"><bpmn:extensionElements><zeebe:calledElement processId="notify-stakeholder" propagateAllChildVariables="false" propagateAllParentVariables="false" /><zeebe:ioMapping><zeebe:input source="={role: &quot;STUDENT&quot;, name: studentName, email: studentEmail}" target="recipient" /><zeebe:input source="=&quot;Revaluation request not accepted - &quot; + courseCode" target="subject" /><zeebe:input source="=&quot;Dear &quot; + studentName + &quot;,
+
+Your revaluation request for &quot; + courseCode + &quot; was not accepted.
+Reason: &quot; + courseResult.reason + &quot;
+
+Examination Cell&quot;" target="body" /><zeebe:input source="=applicationId" target="applicationId" /><zeebe:input source="=get or else(application.requestId, null)" target="requestId" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_06</bpmn:incoming><bpmn:outgoing>Flow_07</bpmn:outgoing></bpmn:callActivity>
+<bpmn:endEvent id="End_Rejected" name="Request rejected"><bpmn:incoming>Flow_07</bpmn:incoming></bpmn:endEvent>
+<bpmn:scriptTask id="Task_RecordUnpaid" name="Record cancellation (unpaid)"><bpmn:extensionElements><zeebe:script expression="={courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: &quot;CANCELLED&quot;, reason: &quot;The fee was not paid within the payment window.&quot;, originalMarks: originalMarks, finalMarks: null, grade: null, refundAmount: 0, examinerName: null, letterUrl: null}" resultVariable="courseResult" /></bpmn:extensionElements><bpmn:incoming>Flow_Unpaid</bpmn:incoming><bpmn:outgoing>Flow_09</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:scriptTask id="Task_RecordPaymentFailed" name="Record cancellation (payment failed)"><bpmn:extensionElements><zeebe:script expression="={courseCode: courseCode, courseName: courseName, requestId: application.requestId, status: &quot;CANCELLED&quot;, reason: &quot;The payment service could not create a payment link. No money was taken.&quot;, originalMarks: originalMarks, finalMarks: null, grade: null, refundAmount: 0, examinerName: null, letterUrl: null}" resultVariable="courseResult" /></bpmn:extensionElements><bpmn:incoming>Flow_PayFailed</bpmn:incoming><bpmn:outgoing>Flow_10</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:exclusiveGateway id="Gateway_JoinCancel"><bpmn:incoming>Flow_09</bpmn:incoming><bpmn:incoming>Flow_10</bpmn:incoming><bpmn:outgoing>Flow_11</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:callActivity id="Call_NotifyCancelled" name="Notify cancellation"><bpmn:extensionElements><zeebe:calledElement processId="notify-stakeholder" propagateAllChildVariables="false" propagateAllParentVariables="false" /><zeebe:ioMapping><zeebe:input source="={role: &quot;STUDENT&quot;, name: studentName, email: studentEmail}" target="recipient" /><zeebe:input source="=&quot;Revaluation request cancelled - &quot; + courseCode" target="subject" /><zeebe:input source="=&quot;Dear &quot; + studentName + &quot;,
+
+Revaluation request &quot; + string(application.requestId) + &quot; was cancelled.
+Reason: &quot; + courseResult.reason + &quot;
+
+Examination Cell&quot;" target="body" /><zeebe:input source="=applicationId" target="applicationId" /><zeebe:input source="=get or else(application.requestId, null)" target="requestId" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_11</bpmn:incoming><bpmn:outgoing>Flow_12</bpmn:outgoing></bpmn:callActivity>
+<bpmn:endEvent id="End_Cancelled" name="Request cancelled"><bpmn:incoming>Flow_12</bpmn:incoming></bpmn:endEvent>
+<bpmn:sequenceFlow id="Flow_01" sourceRef="Start_Course" targetRef="Task_FetchResult" />
+<bpmn:sequenceFlow id="Flow_02" sourceRef="Task_FetchResult" targetRef="Task_Register" />
+<bpmn:sequenceFlow id="Flow_03" sourceRef="Task_Register" targetRef="Task_Eligibility" />
+<bpmn:sequenceFlow id="Flow_04" sourceRef="Task_Eligibility" targetRef="Gateway_Eligible" />
+<bpmn:sequenceFlow id="Flow_Eligible" name="Yes" sourceRef="Gateway_Eligible" targetRef="Sub_FeePayment"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=eligibility.eligible = true</bpmn:conditionExpression></bpmn:sequenceFlow>
+<bpmn:sequenceFlow id="Flow_NotEligible" name="No" sourceRef="Gateway_Eligible" targetRef="Gateway_JoinRejection" />
+<bpmn:sequenceFlow id="Flow_ResultNotFound" sourceRef="Boundary_ResultNotFound" targetRef="Gateway_JoinRejection" />
+<bpmn:sequenceFlow id="Flow_05" sourceRef="Gateway_JoinRejection" targetRef="Task_RecordRejection" />
+<bpmn:sequenceFlow id="Flow_06" sourceRef="Task_RecordRejection" targetRef="Call_NotifyRejection" />
+<bpmn:sequenceFlow id="Flow_07" sourceRef="Call_NotifyRejection" targetRef="End_Rejected" />
+<bpmn:sequenceFlow id="Flow_08" sourceRef="Sub_FeePayment" targetRef="Sub_Revaluation" />
+<bpmn:sequenceFlow id="Flow_Unpaid" sourceRef="Boundary_PaymentDeadline" targetRef="Task_RecordUnpaid" />
+<bpmn:sequenceFlow id="Flow_PayFailed" sourceRef="Boundary_PaymentFailed" targetRef="Task_RecordPaymentFailed" />
+<bpmn:sequenceFlow id="Flow_09" sourceRef="Task_RecordUnpaid" targetRef="Gateway_JoinCancel" />
+<bpmn:sequenceFlow id="Flow_10" sourceRef="Task_RecordPaymentFailed" targetRef="Gateway_JoinCancel" />
+<bpmn:sequenceFlow id="Flow_11" sourceRef="Gateway_JoinCancel" targetRef="Call_NotifyCancelled" />
+<bpmn:sequenceFlow id="Flow_12" sourceRef="Call_NotifyCancelled" targetRef="End_Cancelled" />
+<bpmn:sequenceFlow id="Flow_13" sourceRef="Boundary_ExaminerDeadline" targetRef="Task_Escalate" />
+<bpmn:sequenceFlow id="Flow_14" sourceRef="Task_Escalate" targetRef="End_Escalated" />
+<bpmn:sequenceFlow id="Flow_15" sourceRef="Sub_Revaluation" targetRef="Task_PublishResult" />
+<bpmn:sequenceFlow id="Flow_17" sourceRef="Task_PublishResult" targetRef="Gateway_JoinPublish" />
+<bpmn:sequenceFlow id="Flow_PublishFailed" sourceRef="Boundary_PublishFailed" targetRef="Task_ManualUpdate" />
+<bpmn:sequenceFlow id="Flow_18" sourceRef="Task_ManualUpdate" targetRef="Gateway_JoinPublish" />
+<bpmn:sequenceFlow id="Flow_19" sourceRef="Gateway_JoinPublish" targetRef="Gateway_Refund" />
+<bpmn:sequenceFlow id="Flow_Refund" name="Yes" sourceRef="Gateway_Refund" targetRef="Task_Refund"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision.refundFee = true</bpmn:conditionExpression></bpmn:sequenceFlow>
+<bpmn:sequenceFlow id="Flow_NoRefund" name="No" sourceRef="Gateway_Refund" targetRef="Gateway_JoinRefund" />
+<bpmn:sequenceFlow id="Flow_20" sourceRef="Task_Refund" targetRef="Gateway_JoinRefund" />
+<bpmn:sequenceFlow id="Flow_21" sourceRef="Gateway_JoinRefund" targetRef="Task_GenerateLetter" />
+<bpmn:sequenceFlow id="Flow_22" sourceRef="Task_GenerateLetter" targetRef="Task_RecordOutcome" />
+<bpmn:sequenceFlow id="Flow_23" sourceRef="Task_RecordOutcome" targetRef="Call_NotifyOutcome" />
+<bpmn:sequenceFlow id="Flow_24" sourceRef="Call_NotifyOutcome" targetRef="End_Completed" />
+</bpmn:process>
+<bpmn:message id="Message_FeePaid" name="RevaluationFeePaid"><bpmn:extensionElements><zeebe:subscription correlationKey="=application.requestId" /></bpmn:extensionElements></bpmn:message>
+<bpmn:error id="Error_ResultNotFound" name="Result not found" errorCode="RESULT_NOT_FOUND" />
+<bpmn:error id="Error_PaymentFailed" name="Payment failed" errorCode="PAYMENT_FAILED" />
+<bpmn:error id="Error_PublishFailed" name="Result update failed" errorCode="RESULT_UPDATE_FAILED" />
+<bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="course-revaluation">
+<bpmndi:BPMNShape id="Start_Course_di" bpmnElement="Start_Course"><dc:Bounds x="102" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_FetchResult_di" bpmnElement="Task_FetchResult"><dc:Bounds x="220" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Boundary_ResultNotFound_di" bpmnElement="Boundary_ResultNotFound"><dc:Bounds x="252" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_Register_di" bpmnElement="Task_Register"><dc:Bounds x="370" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_Eligibility_di" bpmnElement="Task_Eligibility"><dc:Bounds x="520" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_Eligible_di" bpmnElement="Gateway_Eligible" isMarkerVisible="true"><dc:Bounds x="695" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="599" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Sub_FeePayment_di" bpmnElement="Sub_FeePayment" isExpanded="true"><dc:Bounds x="810" y="92" width="555" height="216" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Start_Payment_di" bpmnElement="Start_Payment"><dc:Bounds x="852" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_PaymentLink_di" bpmnElement="Task_PaymentLink"><dc:Bounds x="970" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Catch_FeePaid_di" bpmnElement="Catch_FeePaid"><dc:Bounds x="1152" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_FeeReceived_di" bpmnElement="End_FeeReceived"><dc:Bounds x="1279.5" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Boundary_PaymentDeadline_di" bpmnElement="Boundary_PaymentDeadline"><dc:Bounds x="942" y="290" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Boundary_PaymentFailed_di" bpmnElement="Boundary_PaymentFailed"><dc:Bounds x="1242" y="290" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Sub_Revaluation_di" bpmnElement="Sub_Revaluation" isExpanded="true"><dc:Bounds x="1432.5" y="-28" width="1305" height="456" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Start_Reval_di" bpmnElement="Start_Reval"><dc:Bounds x="1467" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_CoeAssign_di" bpmnElement="Task_CoeAssign"><dc:Bounds x="1570" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_SendLogin_di" bpmnElement="Task_SendLogin"><dc:Bounds x="1750" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_Revalue_di" bpmnElement="Task_Revalue"><dc:Bounds x="1915" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_JoinValuation_di" bpmnElement="Gateway_JoinValuation" isMarkerVisible="true"><dc:Bounds x="2075" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1979" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_CompareMarks_di" bpmnElement="Task_CompareMarks"><dc:Bounds x="2185" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_DecideOutcome_di" bpmnElement="Task_DecideOutcome"><dc:Bounds x="2335" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_ThirdValuation_di" bpmnElement="Gateway_ThirdValuation" isMarkerVisible="true"><dc:Bounds x="2510" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="2414" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_CoeAssignThird_di" bpmnElement="Task_CoeAssignThird"><dc:Bounds x="2440" y="16" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_SendLoginThird_di" bpmnElement="Task_SendLoginThird"><dc:Bounds x="2282.5" y="16" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_ThirdValuation_di" bpmnElement="Task_ThirdValuation"><dc:Bounds x="2125" y="16" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_RevalDone_di" bpmnElement="End_RevalDone"><dc:Bounds x="2652" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Boundary_ExaminerDeadline_di" bpmnElement="Boundary_ExaminerDeadline"><dc:Bounds x="2232" y="410" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_Escalate_di" bpmnElement="Task_Escalate"><dc:Bounds x="2320" y="472" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Escalated_di" bpmnElement="End_Escalated"><dc:Bounds x="2502" y="494" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_PublishResult_di" bpmnElement="Task_PublishResult"><dc:Bounds x="2965" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Boundary_PublishFailed_di" bpmnElement="Boundary_PublishFailed"><dc:Bounds x="2997" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_ManualUpdate_di" bpmnElement="Task_ManualUpdate"><dc:Bounds x="3070" y="316" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_JoinPublish_di" bpmnElement="Gateway_JoinPublish" isMarkerVisible="true"><dc:Bounds x="3185" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="3089" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_Refund_di" bpmnElement="Gateway_Refund" isMarkerVisible="true"><dc:Bounds x="3305" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="3209" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_Refund_di" bpmnElement="Task_Refund"><dc:Bounds x="3415" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_JoinRefund_di" bpmnElement="Gateway_JoinRefund" isMarkerVisible="true"><dc:Bounds x="3575" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="3479" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_GenerateLetter_di" bpmnElement="Task_GenerateLetter"><dc:Bounds x="3685" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_RecordOutcome_di" bpmnElement="Task_RecordOutcome"><dc:Bounds x="3835" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Call_NotifyOutcome_di" bpmnElement="Call_NotifyOutcome"><dc:Bounds x="3985" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Completed_di" bpmnElement="End_Completed"><dc:Bounds x="4152" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_JoinRejection_di" bpmnElement="Gateway_JoinRejection" isMarkerVisible="true"><dc:Bounds x="695" y="583" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="599" y="553" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_RecordRejection_di" bpmnElement="Task_RecordRejection"><dc:Bounds x="820" y="568" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Call_NotifyRejection_di" bpmnElement="Call_NotifyRejection"><dc:Bounds x="970" y="568" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Rejected_di" bpmnElement="End_Rejected"><dc:Bounds x="1152" y="590" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_RecordUnpaid_di" bpmnElement="Task_RecordUnpaid"><dc:Bounds x="1030" y="436" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_RecordPaymentFailed_di" bpmnElement="Task_RecordPaymentFailed"><dc:Bounds x="1330" y="436" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_JoinCancel_di" bpmnElement="Gateway_JoinCancel" isMarkerVisible="true"><dc:Bounds x="1505" y="451" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1409" y="421" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Call_NotifyCancelled_di" bpmnElement="Call_NotifyCancelled"><dc:Bounds x="1630" y="436" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Cancelled_di" bpmnElement="End_Cancelled"><dc:Bounds x="1812" y="458" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNEdge id="Flow_P1_di" bpmnElement="Flow_P1"><di:waypoint x="888" y="200" /><di:waypoint x="970" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_P2_di" bpmnElement="Flow_P2"><di:waypoint x="1070" y="200" /><di:waypoint x="1152" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_P3_di" bpmnElement="Flow_P3"><di:waypoint x="1188" y="200" /><di:waypoint x="1280" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R1_di" bpmnElement="Flow_R1"><di:waypoint x="1503" y="200" /><di:waypoint x="1570" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R2_di" bpmnElement="Flow_R2"><di:waypoint x="1670" y="200" /><di:waypoint x="1750" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R3_di" bpmnElement="Flow_R3"><di:waypoint x="1850" y="200" /><di:waypoint x="1915" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R6_di" bpmnElement="Flow_R6"><di:waypoint x="2015" y="200" /><di:waypoint x="2075" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R7_di" bpmnElement="Flow_R7"><di:waypoint x="2125" y="200" /><di:waypoint x="2185" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R8_di" bpmnElement="Flow_R8"><di:waypoint x="2285" y="200" /><di:waypoint x="2335" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_R9_di" bpmnElement="Flow_R9"><di:waypoint x="2435" y="200" /><di:waypoint x="2510" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_ThirdNeeded_di" bpmnElement="Flow_ThirdNeeded"><di:waypoint x="2535" y="175" /><di:waypoint x="2535" y="96" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_T1_di" bpmnElement="Flow_T1"><di:waypoint x="2440" y="56" /><di:waypoint x="2383" y="56" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_T2_di" bpmnElement="Flow_T2"><di:waypoint x="2283" y="56" /><di:waypoint x="2225" y="56" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_ThirdLoop_di" bpmnElement="Flow_ThirdLoop"><di:waypoint x="2125" y="56" /><di:waypoint x="2100" y="56" /><di:waypoint x="2100" y="175" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_NoThird_di" bpmnElement="Flow_NoThird"><di:waypoint x="2560" y="200" /><di:waypoint x="2652" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_01_di" bpmnElement="Flow_01"><di:waypoint x="138" y="200" /><di:waypoint x="220" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_02_di" bpmnElement="Flow_02"><di:waypoint x="320" y="200" /><di:waypoint x="370" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_03_di" bpmnElement="Flow_03"><di:waypoint x="470" y="200" /><di:waypoint x="520" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_04_di" bpmnElement="Flow_04"><di:waypoint x="620" y="200" /><di:waypoint x="695" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_Eligible_di" bpmnElement="Flow_Eligible"><di:waypoint x="745" y="200" /><di:waypoint x="810" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_NotEligible_di" bpmnElement="Flow_NotEligible"><di:waypoint x="720" y="225" /><di:waypoint x="720" y="583" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_ResultNotFound_di" bpmnElement="Flow_ResultNotFound"><di:waypoint x="270" y="258" /><di:waypoint x="270" y="608" /><di:waypoint x="695" y="608" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_05_di" bpmnElement="Flow_05"><di:waypoint x="745" y="608" /><di:waypoint x="820" y="608" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_06_di" bpmnElement="Flow_06"><di:waypoint x="920" y="608" /><di:waypoint x="970" y="608" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_07_di" bpmnElement="Flow_07"><di:waypoint x="1070" y="608" /><di:waypoint x="1152" y="608" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_08_di" bpmnElement="Flow_08"><di:waypoint x="1365" y="200" /><di:waypoint x="1433" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_Unpaid_di" bpmnElement="Flow_Unpaid"><di:waypoint x="960" y="326" /><di:waypoint x="960" y="476" /><di:waypoint x="1030" y="476" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_PayFailed_di" bpmnElement="Flow_PayFailed"><di:waypoint x="1260" y="326" /><di:waypoint x="1260" y="476" /><di:waypoint x="1330" y="476" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_09_di" bpmnElement="Flow_09"><di:waypoint x="1080" y="516" /><di:waypoint x="1080" y="545" /><di:waypoint x="1530" y="545" /><di:waypoint x="1530" y="501" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_10_di" bpmnElement="Flow_10"><di:waypoint x="1430" y="476" /><di:waypoint x="1505" y="476" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11"><di:waypoint x="1555" y="476" /><di:waypoint x="1630" y="476" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_12_di" bpmnElement="Flow_12"><di:waypoint x="1730" y="476" /><di:waypoint x="1812" y="476" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_13_di" bpmnElement="Flow_13"><di:waypoint x="2250" y="446" /><di:waypoint x="2250" y="512" /><di:waypoint x="2320" y="512" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_14_di" bpmnElement="Flow_14"><di:waypoint x="2420" y="512" /><di:waypoint x="2502" y="512" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_15_di" bpmnElement="Flow_15"><di:waypoint x="2738" y="200" /><di:waypoint x="2965" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_17_di" bpmnElement="Flow_17"><di:waypoint x="3065" y="200" /><di:waypoint x="3185" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_PublishFailed_di" bpmnElement="Flow_PublishFailed"><di:waypoint x="3015" y="258" /><di:waypoint x="3015" y="356" /><di:waypoint x="3070" y="356" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_18_di" bpmnElement="Flow_18"><di:waypoint x="3170" y="356" /><di:waypoint x="3210" y="356" /><di:waypoint x="3210" y="225" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_19_di" bpmnElement="Flow_19"><di:waypoint x="3235" y="200" /><di:waypoint x="3305" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_Refund_di" bpmnElement="Flow_Refund"><di:waypoint x="3355" y="200" /><di:waypoint x="3415" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_NoRefund_di" bpmnElement="Flow_NoRefund"><di:waypoint x="3330" y="175" /><di:waypoint x="3330" y="110" /><di:waypoint x="3600" y="110" /><di:waypoint x="3600" y="175" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_20_di" bpmnElement="Flow_20"><di:waypoint x="3515" y="200" /><di:waypoint x="3575" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_21_di" bpmnElement="Flow_21"><di:waypoint x="3625" y="200" /><di:waypoint x="3685" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_22_di" bpmnElement="Flow_22"><di:waypoint x="3785" y="200" /><di:waypoint x="3835" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_23_di" bpmnElement="Flow_23"><di:waypoint x="3935" y="200" /><di:waypoint x="3985" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_24_di" bpmnElement="Flow_24"><di:waypoint x="4085" y="200" /><di:waypoint x="4152" y="200" /></bpmndi:BPMNEdge>
+</bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>

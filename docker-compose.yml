@@ -1,0 +1,176 @@
+# Examination Revaluation System - complete stack (Camunda 8.10)
+#
+#   copy .env.example .env          (Windows)   |   cp .env.example .env   (macOS / Linux)
+#   docker compose up -d --build
+#
+#   Student / staff portal (React + nginx) ..... http://localhost:5173
+#   Backend REST API (Spring Boot) ............. http://localhost:8081/api/applications
+#   Camunda Operate / Tasklist ................. http://localhost:8080/operate   (demo / demo)
+#   Mock external systems dashboard ............ http://localhost:3000
+#   Mailpit (test inbox for all emails) ........ http://localhost:8025
+#   PostgreSQL ................................. localhost:5432
+#
+# Do not run this while Camunda 8 Run (c8run) or the local dev servers are running:
+# they use the same ports. LOCAL DEVELOPMENT ONLY - not a production setup.
+
+services:
+
+  # Runs once before Camunda starts:
+  #  1. gives the Camunda container permission to write to its data volume;
+  #  2. writes the connector secrets into Camunda's file secret store.
+  # In Camunda 8.10 the ENGINE resolves camunda.secrets.<NAME> references (not the connector
+  # runtime), and Self-Managed supports only a file, AWS or GCP store. The file store is a folder
+  # with one file per secret: file name = secret name, file content = value. The values come
+  # from .env (never committed); the BPMN files contain no secret values.
+  camunda-data-init:
+    image: camunda/camunda:8.10.9
+    user: "0:0"
+    environment:
+      RESULTS_API_URL: http://mock-services:3000
+      PAYMENT_API_URL: http://mock-services:3000/razorpay/v1
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        chown -R 1001:1001 /usr/local/camunda/camunda-data
+        chmod 775 /usr/local/camunda/camunda-data
+        for name in RESULTS_API_URL PAYMENT_API_URL RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD; do
+          printenv "$$name" | tr -d '\n' > "/usr/local/camunda/secrets/$$name"
+        done
+        chown -R 1001:1001 /usr/local/camunda/secrets
+        chmod 700 /usr/local/camunda/secrets
+        chmod 600 /usr/local/camunda/secrets/*
+        echo "secret store ready: $$(ls /usr/local/camunda/secrets | tr '\n' ' ')"
+    volumes:
+      - camunda-data:/usr/local/camunda/camunda-data
+      - camunda-secrets:/usr/local/camunda/secrets
+    restart: "no"
+
+  # Camunda 8 Orchestration Cluster: Zeebe engine + Operate + Tasklist in one container
+  orchestration:
+    image: camunda/camunda:8.10.9
+    ports:
+      - "8080:8080"     # REST API + Operate + Tasklist
+      - "26500:26500"   # gRPC (job workers, commands)
+      - "9600:9600"     # management / health
+    volumes:
+      - camunda:/usr/local/camunda/data
+      - camunda-data:/usr/local/camunda/camunda-data
+      - camunda-secrets:/usr/local/camunda/secrets:ro      # file secret store (see camunda-data-init)
+      - ./camunda/application.yaml:/usr/local/camunda/config/application.yaml:ro
+    mem_limit: 1g
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9600 && echo -e \"GET /actuator/health/status HTTP/1.1\r\nHost: localhost\r\n\r\n\" >&3 && head -n 1 <&3'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    depends_on:
+      camunda-data-init:
+        condition: service_completed_successfully
+
+  # Connector runtime: runs the REST and Email connector tasks of the BPMN models.
+  # It needs no secrets of its own: Camunda resolves camunda.secrets.* from the file store
+  # and hands the job to the connector with the values already filled in.
+  connectors:
+    image: camunda/connectors-bundle:8.10.5
+    environment:
+      CAMUNDA_CLIENT_MODE: self-managed
+      CAMUNDA_CLIENT_GRPCADDRESS: http://orchestration:26500
+      CAMUNDA_CLIENT_RESTADDRESS: http://orchestration:8080
+    mem_limit: 1g
+    restart: on-failure
+    depends_on:
+      orchestration:
+        condition: service_healthy
+
+  # Application database (applications, courses, examiners, event log)
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: revaldb
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d revaldb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Mock results system, Razorpay-shaped payment API and document store.
+  # PUBLIC_URL is the address the BROWSER uses for payment links and letters.
+  mock-services:
+    build: ./mock-services
+    environment:
+      PUBLIC_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+
+  # Test SMTP server: catches every email; view them at http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.34
+    command: ["--smtp-auth-accept-any", "--smtp-auth-allow-insecure"]
+    ports:
+      - "8025:8025"     # web inbox
+      - "1025:1025"     # SMTP
+
+  # Spring Boot: REST API + job workers; deploys the BPMN, DMN and forms on startup
+  backend:
+    build:
+      context: .                              # repo root, so the image can include bpmn-models/
+      dockerfile: backend-springboot/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      CAMUNDA_GRPC_ADDRESS: http://orchestration:26500
+      CAMUNDA_REST_ADDRESS: http://orchestration:8080
+      DB_URL: jdbc:postgresql://postgres:5432/revaldb
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      H2_CONSOLE_ENABLED: "false"
+      MOCK_SERVICES_URL: http://mock-services:3000
+      PAYMENT_API_URL: http://mock-services:3000/razorpay/v1
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      SMTP_HOST: mailpit                      # examiner login emails
+      SMTP_PORT: "1025"
+      COE_PASSWORD: ${COE_PASSWORD:-coe-demo-2026}
+    # Camunda can report healthy a few seconds before it accepts deployments;
+    # if the first start fails, Docker simply starts the backend again.
+    restart: on-failure
+    depends_on:
+      orchestration:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mock-services:
+        condition: service_started
+      mailpit:
+        condition: service_started
+
+  # React portal served by nginx; /api is proxied to the backend
+  frontend:
+    build: ./frontend-react
+    ports:
+      - "5173:80"
+    restart: on-failure
+    depends_on:
+      - backend
+
+volumes:
+  camunda:
+  camunda-data:
+  camunda-secrets:
+  postgres-data:

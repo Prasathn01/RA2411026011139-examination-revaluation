@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_revaluation_application" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.52.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.10.0">
+
+<bpmn:process id="revaluation-application" name="Revaluation application" isExecutable="true">
+<bpmn:startEvent id="Start_Application" name="Application submitted"><bpmn:outgoing>Flow_A1</bpmn:outgoing></bpmn:startEvent>
+<bpmn:scriptTask id="Task_CheckApplication" name="Check course list"><bpmn:extensionElements><zeebe:script expression="={courseCount: count(courses), hasDuplicates: count(courses) != count(distinct values(courses)), valid: count(courses) &gt; 0 and count(courses) = count(distinct values(courses))}" resultVariable="applicationCheck" /></bpmn:extensionElements><bpmn:incoming>Flow_A1</bpmn:incoming><bpmn:outgoing>Flow_A2</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:exclusiveGateway id="Gateway_ListValid" name="Course list valid?" default="Flow_ListInvalid"><bpmn:incoming>Flow_A2</bpmn:incoming><bpmn:outgoing>Flow_ListValid</bpmn:outgoing><bpmn:outgoing>Flow_ListInvalid</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:endEvent id="End_Invalid" name="Application rejected (invalid list)"><bpmn:incoming>Flow_ListInvalid</bpmn:incoming></bpmn:endEvent>
+<bpmn:callActivity id="Call_RevaluateCourse" name="Revaluate course"><bpmn:extensionElements><zeebe:calledElement processId="course-revaluation" propagateAllChildVariables="false" propagateAllParentVariables="false" /><zeebe:ioMapping><zeebe:input source="=applicationId" target="applicationId" /><zeebe:input source="=registerNo" target="registerNo" /><zeebe:input source="=studentName" target="studentName" /><zeebe:input source="=studentEmail" target="studentEmail" /><zeebe:input source="=courseCode" target="courseCode" /><zeebe:input source="=paymentWindow" target="paymentWindow" /><zeebe:input source="=examinerDeadline" target="examinerDeadline" /><zeebe:output source="=courseResult" target="courseResult" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_ListValid</bpmn:incoming><bpmn:outgoing>Flow_A3</bpmn:outgoing><bpmn:multiInstanceLoopCharacteristics><bpmn:extensionElements><zeebe:loopCharacteristics inputCollection="=courses" inputElement="courseCode" outputCollection="courseResults" outputElement="=courseResult" /></bpmn:extensionElements></bpmn:multiInstanceLoopCharacteristics></bpmn:callActivity>
+<bpmn:scriptTask id="Task_Summarise" name="Summarise application"><bpmn:extensionElements><zeebe:script expression="={total: count(courseResults), changed: count(courseResults[item.status = &quot;CHANGED&quot;]), unchanged: count(courseResults[item.status = &quot;UNCHANGED&quot;]), rejected: count(courseResults[item.status = &quot;REJECTED&quot;]), cancelled: count(courseResults[item.status = &quot;CANCELLED&quot;]), totalRefund: sum(for r in courseResults return r.refundAmount), lines: string join(for r in courseResults return r.courseCode + &quot;: &quot; + r.status + (if r.finalMarks != null then &quot; (final marks &quot; + string(r.finalMarks) + &quot;, grade &quot; + r.grade + &quot;)&quot; else &quot; - &quot; + r.reason), &quot;
+&quot;)}" resultVariable="summary" /></bpmn:extensionElements><bpmn:incoming>Flow_A3</bpmn:incoming><bpmn:outgoing>Flow_A4</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:serviceTask id="Task_SaveResults" name="Save results"><bpmn:extensionElements><zeebe:taskDefinition type="revaluation.save-results" retries="3" /></bpmn:extensionElements><bpmn:incoming>Flow_A4</bpmn:incoming><bpmn:outgoing>Flow_A5</bpmn:outgoing></bpmn:serviceTask>
+<bpmn:exclusiveGateway id="Gateway_AnyChanged" name="Any marks changed?" default="Flow_NoChange"><bpmn:incoming>Flow_A5</bpmn:incoming><bpmn:outgoing>Flow_Changed</bpmn:outgoing><bpmn:outgoing>Flow_NoChange</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:scriptTask id="Task_PrepareRevised" name="Prepare notices: result revised"><bpmn:extensionElements><zeebe:script expression="=[{role: &quot;STUDENT&quot;, name: studentName, email: studentEmail}, {role: &quot;HOD&quot;, name: &quot;Head of Department&quot;, email: hodEmail}, {role: &quot;COE&quot;, name: &quot;Controller of Examinations&quot;, email: coeEmail}]" resultVariable="recipients" /></bpmn:extensionElements><bpmn:incoming>Flow_Changed</bpmn:incoming><bpmn:outgoing>Flow_A6</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:scriptTask id="Task_PrepareNoChange" name="Prepare notice: no change"><bpmn:extensionElements><zeebe:script expression="=[{role: &quot;STUDENT&quot;, name: studentName, email: studentEmail}]" resultVariable="recipients" /></bpmn:extensionElements><bpmn:incoming>Flow_NoChange</bpmn:incoming><bpmn:outgoing>Flow_A7</bpmn:outgoing></bpmn:scriptTask>
+<bpmn:exclusiveGateway id="Gateway_JoinNotices"><bpmn:incoming>Flow_A6</bpmn:incoming><bpmn:incoming>Flow_A7</bpmn:incoming><bpmn:outgoing>Flow_A8</bpmn:outgoing></bpmn:exclusiveGateway>
+<bpmn:callActivity id="Call_NotifyStakeholders" name="Notify stakeholders"><bpmn:extensionElements><zeebe:calledElement processId="notify-stakeholder" propagateAllChildVariables="false" propagateAllParentVariables="false" /><zeebe:ioMapping><zeebe:input source="=recipient" target="recipient" /><zeebe:input source="=applicationId" target="applicationId" /><zeebe:input source="=&quot;Revaluation application &quot; + applicationId + &quot; - summary&quot;" target="subject" /><zeebe:input source="=&quot;Dear &quot; + recipient.name + &quot;,
+
+Revaluation application &quot; + applicationId + &quot; (&quot; + registerNo + &quot;, &quot; + studentName + &quot;) is closed.
+
+&quot; + summary.lines + &quot;
+
+Total fee refunded: INR &quot; + string(summary.totalRefund) + &quot;
+
+Examination Cell&quot;" target="body" /></zeebe:ioMapping></bpmn:extensionElements><bpmn:incoming>Flow_A8</bpmn:incoming><bpmn:outgoing>Flow_A9</bpmn:outgoing><bpmn:multiInstanceLoopCharacteristics isSequential="true"><bpmn:extensionElements><zeebe:loopCharacteristics inputCollection="=recipients" inputElement="recipient" /></bpmn:extensionElements></bpmn:multiInstanceLoopCharacteristics></bpmn:callActivity>
+<bpmn:endEvent id="End_Closed" name="Application closed"><bpmn:incoming>Flow_A9</bpmn:incoming></bpmn:endEvent>
+<bpmn:sequenceFlow id="Flow_A1" sourceRef="Start_Application" targetRef="Task_CheckApplication" />
+<bpmn:sequenceFlow id="Flow_A2" sourceRef="Task_CheckApplication" targetRef="Gateway_ListValid" />
+<bpmn:sequenceFlow id="Flow_ListValid" name="Yes" sourceRef="Gateway_ListValid" targetRef="Call_RevaluateCourse"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=applicationCheck.valid = true</bpmn:conditionExpression></bpmn:sequenceFlow>
+<bpmn:sequenceFlow id="Flow_ListInvalid" name="No" sourceRef="Gateway_ListValid" targetRef="End_Invalid" />
+<bpmn:sequenceFlow id="Flow_A3" sourceRef="Call_RevaluateCourse" targetRef="Task_Summarise" />
+<bpmn:sequenceFlow id="Flow_A4" sourceRef="Task_Summarise" targetRef="Task_SaveResults" />
+<bpmn:sequenceFlow id="Flow_A5" sourceRef="Task_SaveResults" targetRef="Gateway_AnyChanged" />
+<bpmn:sequenceFlow id="Flow_Changed" name="Yes" sourceRef="Gateway_AnyChanged" targetRef="Task_PrepareRevised"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=summary.changed &gt; 0</bpmn:conditionExpression></bpmn:sequenceFlow>
+<bpmn:sequenceFlow id="Flow_NoChange" name="No" sourceRef="Gateway_AnyChanged" targetRef="Task_PrepareNoChange" />
+<bpmn:sequenceFlow id="Flow_A6" sourceRef="Task_PrepareRevised" targetRef="Gateway_JoinNotices" />
+<bpmn:sequenceFlow id="Flow_A7" sourceRef="Task_PrepareNoChange" targetRef="Gateway_JoinNotices" />
+<bpmn:sequenceFlow id="Flow_A8" sourceRef="Gateway_JoinNotices" targetRef="Call_NotifyStakeholders" />
+<bpmn:sequenceFlow id="Flow_A9" sourceRef="Call_NotifyStakeholders" targetRef="End_Closed" />
+</bpmn:process>
+
+<bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="revaluation-application">
+<bpmndi:BPMNShape id="Start_Application_di" bpmnElement="Start_Application"><dc:Bounds x="102" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_CheckApplication_di" bpmnElement="Task_CheckApplication"><dc:Bounds x="220" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_ListValid_di" bpmnElement="Gateway_ListValid" isMarkerVisible="true"><dc:Bounds x="395" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="299" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Invalid_di" bpmnElement="End_Invalid"><dc:Bounds x="552" y="338" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Call_RevaluateCourse_di" bpmnElement="Call_RevaluateCourse"><dc:Bounds x="535" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_Summarise_di" bpmnElement="Task_Summarise"><dc:Bounds x="700" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_SaveResults_di" bpmnElement="Task_SaveResults"><dc:Bounds x="850" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_AnyChanged_di" bpmnElement="Gateway_AnyChanged" isMarkerVisible="true"><dc:Bounds x="1025" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="929" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_PrepareRevised_di" bpmnElement="Task_PrepareRevised"><dc:Bounds x="1150" y="40" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Task_PrepareNoChange_di" bpmnElement="Task_PrepareNoChange"><dc:Bounds x="1150" y="280" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Gateway_JoinNotices_di" bpmnElement="Gateway_JoinNotices" isMarkerVisible="true"><dc:Bounds x="1325" y="175" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1229" y="145" width="92" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="Call_NotifyStakeholders_di" bpmnElement="Call_NotifyStakeholders"><dc:Bounds x="1450" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="End_Closed_di" bpmnElement="End_Closed"><dc:Bounds x="1632" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+<bpmndi:BPMNEdge id="Flow_A1_di" bpmnElement="Flow_A1"><di:waypoint x="138" y="200" /><di:waypoint x="220" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A2_di" bpmnElement="Flow_A2"><di:waypoint x="320" y="200" /><di:waypoint x="395" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_ListValid_di" bpmnElement="Flow_ListValid"><di:waypoint x="445" y="200" /><di:waypoint x="535" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_ListInvalid_di" bpmnElement="Flow_ListInvalid"><di:waypoint x="420" y="225" /><di:waypoint x="420" y="356" /><di:waypoint x="552" y="356" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A3_di" bpmnElement="Flow_A3"><di:waypoint x="635" y="200" /><di:waypoint x="700" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A4_di" bpmnElement="Flow_A4"><di:waypoint x="800" y="200" /><di:waypoint x="850" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A5_di" bpmnElement="Flow_A5"><di:waypoint x="950" y="200" /><di:waypoint x="1025" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_Changed_di" bpmnElement="Flow_Changed"><di:waypoint x="1050" y="175" /><di:waypoint x="1050" y="80" /><di:waypoint x="1150" y="80" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_NoChange_di" bpmnElement="Flow_NoChange"><di:waypoint x="1050" y="225" /><di:waypoint x="1050" y="320" /><di:waypoint x="1150" y="320" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A6_di" bpmnElement="Flow_A6"><di:waypoint x="1250" y="80" /><di:waypoint x="1350" y="80" /><di:waypoint x="1350" y="175" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A7_di" bpmnElement="Flow_A7"><di:waypoint x="1250" y="320" /><di:waypoint x="1350" y="320" /><di:waypoint x="1350" y="225" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A8_di" bpmnElement="Flow_A8"><di:waypoint x="1375" y="200" /><di:waypoint x="1450" y="200" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="Flow_A9_di" bpmnElement="Flow_A9"><di:waypoint x="1550" y="200" /><di:waypoint x="1632" y="200" /></bpmndi:BPMNEdge>
+</bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>

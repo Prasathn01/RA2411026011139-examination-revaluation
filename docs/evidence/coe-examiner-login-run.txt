@@ -1,0 +1,66 @@
+CoE assignment + examiner login flow, Camunda 8 Run 8.10.6 + Spring Boot + Mailpit, 18 Nov 2026
+Script: node flow-scenario.mjs (drives the same /api endpoints the React portal uses).
+Note: the label '(published 45 ...)' on the 21CSC303J line is fixed text from the script; the real published mark is 47 (see the final summary).
+
+08:01:58 invalid application: rejected with 400 as expected - Please correct the highlighted fields. {"registerNo":"must look like RA2411026011139","studentEmail":"must be a valid email address"}
+08:01:58 task inbox without sign-in: rejected with 401 as expected - Please sign in to the staff portal. {}
+08:01:58 wrong CoE password: rejected with 401 as expected - Wrong username or password. {}
+08:01:59 CoE signed in: {"token":null,"username":"coe","displayName":"Controller of Examinations","role":"COE"}
+08:01:59 application APP-261118133159076
+08:02:01 21CSC306L rejected: Practical, project and internal assessments are not revalued
+08:02:01 21CSC305P paid (REV-RA2411026011139-21CSC305P-63319363)
+08:02:01 21CSC303J paid (REV-RA2411026011139-21CSC303J-63319335)
+08:02:08 21CSC305P stage "Waiting for CoE to assign examiner"; first examiner EXM-101; options EXM-103(5), EXM-102(7)
+08:02:08 21CSC305P: CoE picks the first examiner: rejected with 400 as expected - EXM-101 has already valued this script. Pick a different examiner. {}
+08:02:08 21CSC305P: CoE assigned EXM-103 Dr. C. Ravi
+08:02:08 21CSC303J stage "Waiting for CoE to assign examiner"; first examiner EXM-104; options EXM-101(2), EXM-106(2), EXM-102(7)
+08:02:08 21CSC303J: CoE picks the first examiner: rejected with 400 as expected - EXM-104 has already valued this script. Pick a different examiner. {}
+08:02:08 21CSC303J: CoE assigned EXM-102 Dr. B. Priya
+08:02:10 email "Revaluation assigned - 21CSC305P (REV-RA2411026011139-21CSC305P-63319363)" to c.ravi@examiners.test: username exm-103, password received (10 chars)
+08:02:10 email "Revaluation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-63319335)" to b.priya@examiners.test: username exm-102, password received (10 chars)
+08:02:10 EXM-103 signed in; inbox: Revalue answer script (blind) 21CSC305P
+08:02:10 EXM-102 signed in; inbox: Revalue answer script (blind) 21CSC303J
+08:02:11 blind form variables for the examiner: {"courseCode":"21CSC305P","courseName":"Machine Learning","requestId":"REV-RA2411026011139-21CSC305P-63319363","examinerName":"Dr. C. Ravi"}
+08:02:11 CoE opens an examiner task: rejected with 403 as expected - This task is not assigned to you. {}
+08:02:11 21CSC305P revalued 74
+08:02:11 marks 140: rejected with 400 as expected - Please correct the highlighted fields. {"revaluedMarks":"must be less than or equal to 100"}
+08:02:11 21CSC303J revalued 66 (published 45 -> difference over 15)
+08:02:13 third valuation: first EXM-104, revaluer Dr. B. Priya; options EXM-101, EXM-106
+08:02:13 CoE picks the revaluer again: rejected with 400 as expected - EXM-102 has already valued this script. Pick a different examiner. {}
+08:02:13 CoE assigned third examiner EXM-101 Dr. A. Kumar
+08:02:15 email "Third valuation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-63319335)" to a.kumar@examiners.test: username exm-101, password received (10 chars)
+08:02:15 third valuation 52
+08:02:17 manual update form shows {"courseCode":"21CSC303J","courseName":"Operating Systems","requestId":"REV-RA2411026011139-21CSC303J-63319335","registerNo":"RA2411026011139","finalMarks":52,"grade":"C"}
+08:02:20 application COMPLETED total refund 2000
+08:02:20  21CSC305P: CHANGED 68 -> 74 A refund 1000 examiner Dr. C. Ravi letter yes
+08:02:20  21CSC303J: CHANGED 47 -> 52 C refund 1000 examiner Dr. B. Priya (third valuation: Dr. A. Kumar) letter yes
+08:02:20  21CSC306L: REJECTED 40 -> -  refund 0 examiner - letter no
+08:02:24 emails in the last 15 min:
+08:02:24   13:24:33 to ram@example.com "Revaluation request not accepted - 21CSC306L"
+08:02:24   13:24:42 to c.ravi@examiners.test "Revaluation assigned - 21CSC305P (REV-RA2411026011139-21CSC305P-62868995)"
+08:02:24   13:24:43 to b.priya@examiners.test "Revaluation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-62868274)"
+08:02:24   13:24:45 to ram@example.com "Revaluation result - 21CSC305P"
+08:02:24   13:25:12 to f.external@examiners.test "Third valuation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-62868274)"
+08:02:24   13:25:17 to ram@example.com "Revaluation result - 21CSC303J"
+08:02:24   13:25:17 to ram@example.com "Revaluation application APP-261118132419477 - summary"
+08:02:24   13:25:17 to hod.cse@srmist.test "Revaluation application APP-261118132419477 - summary"
+08:02:24   13:25:17 to coe@srmist.test "Revaluation application APP-261118132419477 - summary"
+08:02:24   13:27:26 to ram@example.com "Revaluation request not accepted - 21CSC306L"
+08:02:24   13:27:31 to c.ravi@examiners.test "Revaluation assigned - 21CSC305P (REV-RA2411026011139-21CSC305P-63045661)"
+08:02:24   13:27:32 to b.priya@examiners.test "Revaluation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-63046032)"
+08:02:24   13:27:35 to ram@example.com "Revaluation result - 21CSC305P"
+08:02:24   13:27:38 to f.external@examiners.test "Third valuation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-63046032)"
+08:02:24   13:29:53 to ram@example.com "Revaluation result - 21CSC303J"
+08:02:24   13:29:53 to ram@example.com "Revaluation application APP-261118132725118 - summary"
+08:02:24   13:29:53 to hod.cse@srmist.test "Revaluation application APP-261118132725118 - summary"
+08:02:24   13:29:53 to coe@srmist.test "Revaluation application APP-261118132725118 - summary"
+08:02:24   13:31:59 to ram@example.com "Revaluation request not accepted - 21CSC306L"
+08:02:24   13:32:08 to c.ravi@examiners.test "Revaluation assigned - 21CSC305P (REV-RA2411026011139-21CSC305P-63319363)"
+08:02:24   13:32:08 to b.priya@examiners.test "Revaluation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-63319335)"
+08:02:24   13:32:11 to ram@example.com "Revaluation result - 21CSC305P"
+08:02:24   13:32:13 to a.kumar@examiners.test "Third valuation assigned - 21CSC303J (REV-RA2411026011139-21CSC303J-63319335)"
+08:02:24   13:32:18 to ram@example.com "Revaluation result - 21CSC303J"
+08:02:24   13:32:18 to ram@example.com "Revaluation application APP-261118133159076 - summary"
+08:02:24   13:32:18 to hod.cse@srmist.test "Revaluation application APP-261118133159076 - summary"
+08:02:24   13:32:18 to coe@srmist.test "Revaluation application APP-261118133159076 - summary"
+APP_ID=APP-261118133159076

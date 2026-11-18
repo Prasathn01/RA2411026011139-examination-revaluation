@@ -1,0 +1,32 @@
+{
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.10.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.40.0"
+  },
+  "schemaVersion": 19,
+  "id": "assign-examiner",
+  "type": "default",
+  "components": [
+    {
+      "type": "text",
+      "text": "#### Request {{application.requestId}}\nCourse: **{{courseCode}} – {{courseName}}**  \nStudent register no.: {{registerNo}}",
+      "id": "Field_assign_examiner_0"
+    },
+    {
+      "type": "textfield",
+      "key": "selectedExaminerId",
+      "label": "Examiner ID (for example EXM-102)",
+      "validate": {
+        "required": true
+      },
+      "id": "Field_assign_examiner_1"
+    },
+    {
+      "type": "text",
+      "text": "Pick an examiner who may value this course. It must not be the faculty member who did the first valuation, and for a third valuation it must not be the revaluer either. The system then emails the examiner a portal login.",
+      "id": "Field_assign_examiner_2"
+    }
+  ]
+}

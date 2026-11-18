@@ -1,0 +1,33 @@
+sequenceDiagram
+  autonumber
+  actor St as Student
+  participant UI as React portal
+  participant BE as Spring Boot
+  participant ZB as Camunda (Zeebe)
+  participant CN as Connectors
+  participant MK as Mock services
+  actor Ex as Examiner
+  St->>UI: Fill form, add 2 courses
+  UI->>BE: POST /api/applications
+  BE->>ZB: Start revaluation-application (courses = [..])
+  ZB->>ZB: Parallel multi-instance: one course-revaluation per course
+  ZB->>CN: Fetch published result (REST GET)
+  CN->>MK: GET /results/{regNo}/{course}
+  ZB->>ZB: DMN: eligible? fee?
+  ZB->>CN: Create fee payment link (REST POST)
+  St->>UI: Pay fee (demo)
+  UI->>BE: POST /api/payments/{requestId}/simulate
+  BE->>ZB: Publish message RevaluationFeePaid (key = requestId)
+  ZB->>BE: Job assign-examiner
+  BE-->>ZB: examiner = least busy, not first examiner
+  Ex->>UI: Task inbox: claim + enter marks (blind)
+  UI->>BE: POST /api/tasks/{key}/assign, /complete
+  BE->>ZB: Complete user task (revaluedMarks)
+  ZB->>ZB: DMN outcome + final grade
+  ZB->>CN: Publish result (REST PATCH), refund (REST POST)
+  ZB->>BE: Job generate-letter
+  ZB->>CN: Call notify-stakeholder: Email connector
+  ZB->>BE: Job save-results (after all courses)
+  ZB->>CN: Sequential multi-instance emails: student, HOD, CoE
+  UI->>BE: GET /api/applications/{id} (every 4 s)
+  BE->>ZB: Search process instances / element instances / variables
